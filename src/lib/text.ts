@@ -16,18 +16,24 @@
 import { strip, lstrip, rstrip, utf8ByteLength, cpLength, cpSlice } from "./pycompat";
 
 /**
- * Python (ccr-hook.py:135-137):
+ * Python (ccr-hook.py:135-139):
  *   value = value.strip() or "unknown"
- *   return re.sub(r"[^A-Za-z0-9_.-]", "_", value)
+ *   value = re.sub(r"[^A-Za-z0-9_.-]", "_", value)
+ *   if re.fullmatch(r"\.+", value): value = value.replace(".", "_")
  *
  * Python's re operates per Unicode codepoint, so each disallowed codepoint
  * becomes exactly one "_". The "u" flag makes the JS regex match by codepoint
  * too (without it, each UTF-16 surrogate half of an astral character would be
  * replaced separately, yielding two "_" instead of one).
+ *
+ * "." / ".." (and any all-dots string) are kept verbatim by the allow-list, but
+ * they are path-control segments: used as a path component they escape the
+ * parent dir (e.g. sessionDir(root, "..") -> root). Remap an all-dots result to
+ * underscores so the output is always a safe single path component.
  */
 export function sanitize(value: string): string {
-  const v = strip(value) || "unknown";
-  return v.replace(/[^A-Za-z0-9_.-]/gu, "_");
+  const v = (strip(value) || "unknown").replace(/[^A-Za-z0-9_.-]/gu, "_");
+  return /^\.+$/.test(v) ? v.replace(/\./g, "_") : v;
 }
 
 /**

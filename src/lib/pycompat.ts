@@ -70,6 +70,38 @@ export function splitlines(s: string): string[] {
   return out;
 }
 
+/**
+ * Mirror of Python `str.splitlines(keepends=True)`.
+ *
+ * Same boundary set as splitlines(), but each returned line INCLUDES its
+ * terminator ("\r\n" kept whole), and there is no synthetic trailing empty
+ * string. "a\nb".splitlinesKeepends() == ["a\n", "b"]; "a\n" == ["a\n"].
+ */
+export function splitlinesKeepends(s: string): string[] {
+  const out: string[] = [];
+  const n = s.length;
+  let i = 0;
+  let start = 0;
+  while (i < n) {
+    const ch = s[i]!;
+    if (LINE_BOUNDARY.has(ch)) {
+      let end = i + 1;
+      if (ch === "\r" && i + 1 < n && s[i + 1] === "\n") {
+        end = i + 2;
+      }
+      out.push(s.slice(start, end));
+      i = end;
+      start = i;
+    } else {
+      i += 1;
+    }
+  }
+  if (start < n) {
+    out.push(s.slice(start));
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // str.strip() / lstrip() / rstrip()
 // ---------------------------------------------------------------------------

@@ -110,14 +110,26 @@ def load_json(path: Path, default: Any) -> Any:
 
 def write_json(path: Path, data: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    tmp.replace(path)
+    # Unpredictable temp name + O_EXCL (no-follow) via mkstemp so a hostile
+    # pre-existing symlink at the temp path cannot be followed/clobbered; clean
+    # up the temp on any failure.
+    fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=path.name + ".", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(json.dumps(data, ensure_ascii=False, indent=2) + "\n")
+        os.replace(tmp, str(path))
+    except BaseException:
+        with contextlib.suppress(FileNotFoundError):
+            os.unlink(tmp)
+        raise
 
 
 def append_jsonl(path: Path, data: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as f:
+    # O_NOFOLLOW: refuse to append THROUGH a hostile symlink planted at `path`
+    # (os.open raises) rather than redirecting the append to an arbitrary target.
+    fd = os.open(str(path), os.O_APPEND | os.O_CREAT | os.O_WRONLY | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, "a", encoding="utf-8") as f:
         f.write(json.dumps(data, ensure_ascii=False, sort_keys=True) + "\n")
 
 
@@ -134,7 +146,13 @@ def read_stdin_json() -> dict[str, Any]:
 
 def sanitize(value: str) -> str:
     value = value.strip() or "unknown"
-    return re.sub(r"[^A-Za-z0-9_.-]", "_", value)
+    value = re.sub(r"[^A-Za-z0-9_.-]", "_", value)
+    # "." / ".." (any all-dots) are path-control segments that would let a
+    # sanitized id escape its parent dir; remap dots so the result is always a
+    # safe single path component.
+    if re.fullmatch(r"\.+", value):
+        value = value.replace(".", "_")
+    return value
 
 
 def workspace_id() -> str:
@@ -565,6 +583,11 @@ def read_untracked_patch(cwd: str) -> str:
         path = (cwd_path / rel).resolve()
         if not str(path).startswith(str(cwd_path) + os.sep):
             continue
+        # Re-validate the symlink-RESOLVED repo-relative path: an in-tree symlink
+        # (e.g. alias.txt -> .env.local) passes safe_rel_path on the link NAME
+        # but would read an excluded-sensitive target. Re-check the resolved path.
+        if not safe_rel_path(str(path.relative_to(cwd_path))):
+            continue
         if not path.is_file():
             continue
         try:
@@ -634,8 +657,8 @@ def collect_diff(cwd: str) -> tuple[str, str, str, bool, int, list[str]]:
         return "", "", "", False, 0, []
     _, head = git(cwd, ["rev-parse", "--short", "HEAD"])
     pathspecs = diff_pathspecs()
-    _, staged = git(cwd, ["diff", "--cached", "--", *pathspecs])
-    _, unstaged = git(cwd, ["diff", "--", *pathspecs])
+    _, staged = git(cwd, ["diff", "--cached", "--no-ext-diff", "--no-textconv", "--", *pathspecs])
+    _, unstaged = git(cwd, ["diff", "--no-ext-diff", "--no-textconv", "--", *pathspecs])
     untracked = read_untracked_patch(cwd)
     sections = [
         ("# Git HEAD", head.strip() or "unknown"),
@@ -821,7 +844,17 @@ def compute_delta_patch(prev_diff: Path, current_diff: Path, dest: Path) -> bool
         return False
     if not proc.stdout.strip():
         return False
-    dest.write_text(proc.stdout, encoding="utf-8")
+    # Atomic no-follow write (random temp + os.replace) so a hostile pre-existing
+    # `dest` symlink is replaced rather than followed and clobbered.
+    fd, tmp = tempfile.mkstemp(dir=str(dest.parent), prefix=dest.name + ".", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(proc.stdout)
+        os.replace(tmp, str(dest))
+    except BaseException:
+        with contextlib.suppress(FileNotFoundError):
+            os.unlink(tmp)
+        raise
     return True
 
 
@@ -1022,16 +1055,19 @@ def request_markdown(
         "- If Worker Follow-up is listed, verify each claimed \"applied\" change against the diff. Do not trust the claim.",
         "",
         "Review process (multi-agent — required):",
-        "- Spawn 6 independent reviewer subagents in parallel, each given the same diff/context but a distinct lens. Use one subagent per lens:",
-        "  1. Correctness & regressions — logic bugs, broken behavior, edge cases, off-by-one, error handling.",
-        "  2. Requirements & intent fit — does the diff serve the stated Purpose/intent and Task Context? Flag scope drift and missing requirements.",
-        "  3. Security & data safety — secrets, injection, unsafe defaults, permission boundaries, data loss/corruption.",
-        "  4. Tests & coverage — missing or weak tests for changed behavior, untested edge cases, flaky or wrong assertions.",
-        "  5. Performance, concurrency & resources — hot-path cost, allocations, race conditions, leaks, blocking I/O.",
-        "  6. Maintainability & design — boundaries, duplication, naming, readability, API clarity, needless complexity.",
-        "- Each subagent must be read-only (no file edits, no git mutations, no recursive CCR review) and return findings as `file:line` + concrete fix, tagged Must Fix / Should Consider, or report nothing if its lens is clean.",
-        "- If your runtime cannot spawn subagents, instead perform the 6 lenses as 6 separate sequential review passes and keep their findings distinct.",
-        "- Then YOU consolidate the 6 results into one review: deduplicate overlapping findings, drop anything below the bar, resolve conflicts between subagents, and decide a single overall REVIEW_DECISION. The consolidated review is the only thing you emit; do not paste the raw per-subagent reports.",
+        "- Run a parallel independent code review: spawn 8 read-only reviewer subagents in parallel, each given the same diff/context but a distinct lens, with no shared findings between them. One lens per subagent:",
+        "  A1. Baseline correctness & regressions — logic bugs, broken behavior, off-by-one, error handling.",
+        "  A2. User-visible regressions & requirements/intent fit — does the diff serve the stated Purpose/intent and Task Context? Flag scope drift and missing requirements.",
+        "  A3. Edge cases & invalid states — boundary inputs, empty/null, unexpected ordering, partial failures.",
+        "  A4. Security, auth, privacy & data safety — secrets, injection, unsafe defaults, permission boundaries, data loss/corruption.",
+        "  A5. Data invariants & API/contract stability — schema/format guarantees, backward compatibility, serialization.",
+        "  A6. Concurrency, lifecycle, async ordering, resources & error handling — race conditions, locks, leaks, blocking I/O.",
+        "  A7. Tests, CI, deploy & migrations — missing or weak tests for changed behavior, untested edge cases, flaky or wrong assertions, migration/rollout risk.",
+        "  A8. Architecture, integration impact & maintainability — boundaries, duplication, naming, readability, API clarity, needless complexity.",
+        "- Each subagent must be read-only (no file edits, no git mutations, no recursive CCR review). It returns findings as `file:line` + concrete fix + trigger/impact; if its lens is clean it reports nothing.",
+        "- If your runtime cannot spawn subagents, instead perform the 8 lenses as 8 separate sequential review passes and keep their findings distinct.",
+        "- Aggregate the results yourself: cluster duplicates by ROOT CAUSE (not by title or line number); duplicate count is a confidence signal, not the primary ranking. Verify each finding's evidence locally before reporting and drop speculative ones. Preserve rare but verified single-agent findings — never bury a critical single-agent find under obvious medium ones.",
+        "- Then YOU consolidate into ONE review and decide a single overall REVIEW_DECISION, classifying each kept finding by the Must Fix / Should Consider bar below. Emit only the consolidated review; do not paste the raw per-subagent reports.",
         "",
         "Reviewer constraints (strict):",
         "- Do not edit, create, or delete files.",
@@ -1154,10 +1190,11 @@ Diff file: {diff_file or "not included"}
 {bullets(focus)}
 
 Review process (multi-agent — required):
-- Spawn 6 independent reviewer subagents in parallel, each given the same scope/context but a distinct lens. Cover the Review Focus items above first, then fill the remaining slots from: correctness & regressions, requirements/intent fit, security & data safety, tests & coverage, performance/concurrency, maintainability & design — until you have 6 distinct lenses.
-- Each subagent must be read-only (no file edits, no git mutations, no recursive CCR review) and return findings as `file:line` + concrete fix, tagged Must Fix / Should Consider, or report nothing if its lens is clean.
-- If your runtime cannot spawn subagents, instead perform the 6 lenses as 6 separate sequential review passes and keep their findings distinct.
-- Then YOU consolidate the 6 results into one review: deduplicate overlapping findings, drop anything below the bar, resolve conflicts between subagents, and decide a single overall REVIEW_DECISION. The consolidated review is the only thing you emit; do not paste the raw per-subagent reports.
+- Run a parallel independent code review: spawn 8 read-only reviewer subagents in parallel, each given the same scope/context but a distinct lens, with no shared findings between them. Cover the Review Focus items above first, then fill the remaining slots until you have 8 distinct lenses: A1 baseline correctness & regressions, A2 user-visible regressions & requirements/intent fit, A3 edge cases & invalid states, A4 security/auth/privacy & data safety, A5 data invariants & API/contract stability, A6 concurrency/lifecycle/async ordering/resources & error handling, A7 tests/CI/deploy/migrations & coverage, A8 architecture/integration impact & maintainability.
+- Each subagent must be read-only (no file edits, no git mutations, no recursive CCR review). It returns findings as `file:line` + concrete fix + trigger/impact; if its lens is clean it reports nothing.
+- If your runtime cannot spawn subagents, instead perform the 8 lenses as 8 separate sequential review passes and keep their findings distinct.
+- Aggregate the results yourself: cluster duplicates by ROOT CAUSE (not by title or line number); duplicate count is a confidence signal, not the primary ranking. Verify each finding's evidence locally before reporting and drop speculative ones. Preserve rare but verified single-agent findings — never bury a critical single-agent find under obvious medium ones.
+- Then YOU consolidate into ONE review and decide a single overall REVIEW_DECISION, classifying each kept finding by the Must Fix / Should Consider bar below. Emit only the consolidated review; do not paste the raw per-subagent reports.
 
 Reviewer constraints (strict):
 - Do not edit, create, or delete files.

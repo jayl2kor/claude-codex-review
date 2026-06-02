@@ -190,16 +190,19 @@ export function requestMarkdown(
     "- If Worker Follow-up is listed, verify each claimed \"applied\" change against the diff. Do not trust the claim.",
     "",
     "Review process (multi-agent — required):",
-    "- Spawn 6 independent reviewer subagents in parallel, each given the same diff/context but a distinct lens. Use one subagent per lens:",
-    "  1. Correctness & regressions — logic bugs, broken behavior, edge cases, off-by-one, error handling.",
-    "  2. Requirements & intent fit — does the diff serve the stated Purpose/intent and Task Context? Flag scope drift and missing requirements.",
-    "  3. Security & data safety — secrets, injection, unsafe defaults, permission boundaries, data loss/corruption.",
-    "  4. Tests & coverage — missing or weak tests for changed behavior, untested edge cases, flaky or wrong assertions.",
-    "  5. Performance, concurrency & resources — hot-path cost, allocations, race conditions, leaks, blocking I/O.",
-    "  6. Maintainability & design — boundaries, duplication, naming, readability, API clarity, needless complexity.",
-    "- Each subagent must be read-only (no file edits, no git mutations, no recursive CCR review) and return findings as `file:line` + concrete fix, tagged Must Fix / Should Consider, or report nothing if its lens is clean.",
-    "- If your runtime cannot spawn subagents, instead perform the 6 lenses as 6 separate sequential review passes and keep their findings distinct.",
-    "- Then YOU consolidate the 6 results into one review: deduplicate overlapping findings, drop anything below the bar, resolve conflicts between subagents, and decide a single overall REVIEW_DECISION. The consolidated review is the only thing you emit; do not paste the raw per-subagent reports.",
+    "- Run a parallel independent code review: spawn 8 read-only reviewer subagents in parallel, each given the same diff/context but a distinct lens, with no shared findings between them. One lens per subagent:",
+    "  A1. Baseline correctness & regressions — logic bugs, broken behavior, off-by-one, error handling.",
+    "  A2. User-visible regressions & requirements/intent fit — does the diff serve the stated Purpose/intent and Task Context? Flag scope drift and missing requirements.",
+    "  A3. Edge cases & invalid states — boundary inputs, empty/null, unexpected ordering, partial failures.",
+    "  A4. Security, auth, privacy & data safety — secrets, injection, unsafe defaults, permission boundaries, data loss/corruption.",
+    "  A5. Data invariants & API/contract stability — schema/format guarantees, backward compatibility, serialization.",
+    "  A6. Concurrency, lifecycle, async ordering, resources & error handling — race conditions, locks, leaks, blocking I/O.",
+    "  A7. Tests, CI, deploy & migrations — missing or weak tests for changed behavior, untested edge cases, flaky or wrong assertions, migration/rollout risk.",
+    "  A8. Architecture, integration impact & maintainability — boundaries, duplication, naming, readability, API clarity, needless complexity.",
+    "- Each subagent must be read-only (no file edits, no git mutations, no recursive CCR review). It returns findings as `file:line` + concrete fix + trigger/impact; if its lens is clean it reports nothing.",
+    "- If your runtime cannot spawn subagents, instead perform the 8 lenses as 8 separate sequential review passes and keep their findings distinct.",
+    "- Aggregate the results yourself: cluster duplicates by ROOT CAUSE (not by title or line number); duplicate count is a confidence signal, not the primary ranking. Verify each finding's evidence locally before reporting and drop speculative ones. Preserve rare but verified single-agent findings — never bury a critical single-agent find under obvious medium ones.",
+    "- Then YOU consolidate into ONE review and decide a single overall REVIEW_DECISION, classifying each kept finding by the Must Fix / Should Consider bar below. Emit only the consolidated review; do not paste the raw per-subagent reports.",
     "",
     "Reviewer constraints (strict):",
     "- Do not edit, create, or delete files.",
@@ -344,10 +347,11 @@ ${instructionsBlock}
 ${bullets(focus)}
 
 Review process (multi-agent — required):
-- Spawn 6 independent reviewer subagents in parallel, each given the same scope/context but a distinct lens. Cover the Review Focus items above first, then fill the remaining slots from: correctness & regressions, requirements/intent fit, security & data safety, tests & coverage, performance/concurrency, maintainability & design — until you have 6 distinct lenses.
-- Each subagent must be read-only (no file edits, no git mutations, no recursive CCR review) and return findings as \`file:line\` + concrete fix, tagged Must Fix / Should Consider, or report nothing if its lens is clean.
-- If your runtime cannot spawn subagents, instead perform the 6 lenses as 6 separate sequential review passes and keep their findings distinct.
-- Then YOU consolidate the 6 results into one review: deduplicate overlapping findings, drop anything below the bar, resolve conflicts between subagents, and decide a single overall REVIEW_DECISION. The consolidated review is the only thing you emit; do not paste the raw per-subagent reports.
+- Run a parallel independent code review: spawn 8 read-only reviewer subagents in parallel, each given the same scope/context but a distinct lens, with no shared findings between them. Cover the Review Focus items above first, then fill the remaining slots until you have 8 distinct lenses: A1 baseline correctness & regressions, A2 user-visible regressions & requirements/intent fit, A3 edge cases & invalid states, A4 security/auth/privacy & data safety, A5 data invariants & API/contract stability, A6 concurrency/lifecycle/async ordering/resources & error handling, A7 tests/CI/deploy/migrations & coverage, A8 architecture/integration impact & maintainability.
+- Each subagent must be read-only (no file edits, no git mutations, no recursive CCR review). It returns findings as \`file:line\` + concrete fix + trigger/impact; if its lens is clean it reports nothing.
+- If your runtime cannot spawn subagents, instead perform the 8 lenses as 8 separate sequential review passes and keep their findings distinct.
+- Aggregate the results yourself: cluster duplicates by ROOT CAUSE (not by title or line number); duplicate count is a confidence signal, not the primary ranking. Verify each finding's evidence locally before reporting and drop speculative ones. Preserve rare but verified single-agent findings — never bury a critical single-agent find under obvious medium ones.
+- Then YOU consolidate into ONE review and decide a single overall REVIEW_DECISION, classifying each kept finding by the Must Fix / Should Consider bar below. Emit only the consolidated review; do not paste the raw per-subagent reports.
 
 Reviewer constraints (strict):
 - Do not edit, create, or delete files.

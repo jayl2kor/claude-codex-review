@@ -180,6 +180,12 @@ for (const s of [
   "newline\nin\nmiddle",
   "已经-OK.v1",
   "!@#$%^&*()",
+  // Path-control segments: all-dots must be remapped to underscores so a
+  // sanitized id can never escape its parent dir.
+  ".",
+  "..",
+  "...",
+  "  ..  ",
 ]) {
   add("sanitize", sanitize, s);
 }
