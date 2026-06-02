@@ -125,8 +125,8 @@ cmux/
 | **0** | **골든 테스트 확립** — `ccr.sh` 동작과 templates 재구성에 대한 고정값(byte parity, JSON 계약 등)을 잠근다. | `test/golden*`, `test/golden*.test.ts` | DONE / IN-PROGRESS (net + drift guard 추가됨) |
 | **1** | **설치기 분해** — `ccr.sh`의 heredoc 페이로드를 `templates/`로 추출(byte-identical), 설치 로직을 `src/install.ts`로 포팅. `ccr.sh`는 불변. | `templates/`(44), `src/install.ts`, `templates/selftest-install.py` | DONE / IN-PROGRESS (templates·selftest·install.ts 완료, 컴파일 검증) |
 | **2** | **순수 유틸 포팅** — 의존성 없는 leaf 모듈 우선. | `lib/pycompat.ts`, `lib/constants.ts`, `lib/{text,diff,decision,intent,tool,misc}.ts`, `lib/request.ts` | **2a DONE** (no-I/O 순수 함수 ~26개 + 기반 2개, 오라클 차등테스트 통과). **2b DONE** (`request_markdown`/`scope_request_markdown`를 `lib/request.ts`로 포팅 — 실제로는 FS 비의존 순수 빌더였음, 오라클 차등테스트 통과). |
-| **3** | **락 + 상태** — advisory lock과 상태 파일 갱신을 byte-stable하게 포팅. 위험 1·5번 해소. | `lib/lock.ts`, `lib/git.ts`(diff 해시 포함) | TODO |
-| **4** | **리뷰 코어 + 훅** — 리뷰 시작/종료/결정 파싱과 훅 디스패치. JSON 계약(위험 7)과 정규식(위험 4) 회귀 검증. | `lib/review.ts`, `lib/report.ts`, `lib/intent.ts`, `lib/cmux.ts`, `lib/hooks.ts` | TODO |
+| **3** | **락 + 상태** — advisory lock과 상태 파일 갱신을 byte-stable하게 포팅. 위험 1·5번 해소. | `lib/io.ts`, `lib/paths.ts`, `lib/lock.ts`, `lib/git.ts`(diff 해시 포함) | **DONE** (io/paths/lock/git 포팅, 상태/이벤트 파일 byte-parity + collect_diff sha256 parity를 오라클 통합테스트로 검증; 위험 1은 O_EXCL 락으로 의미 보존, 위험 5는 node:crypto sha256로 해소). |
+| **4** | **리뷰 코어 + 훅** — 리뷰 시작/종료/결정 파싱과 훅 디스패치. JSON 계약(위험 7)과 정규식(위험 4) 회귀 검증. | `lib/session.ts`, `lib/review.ts`, `lib/report.ts`, `lib/cmux.ts`, `lib/hooks.ts` | **4a DONE** (FS 세션/의도/원장 + 리뷰/리포트 헬퍼: capture/load_session_context, load_session_intent, append_ledger, build_iteration_table, load_review_instructions(`session.ts`); find_previous_round_dir, parse_previous_review, build_worker_followup(`review.ts`); _latest_session_id, _round_must_fix_count, _round_files_touched(`report.ts`). 오라클 통합테스트 `test/phase4.test.ts` 통과). **4b-1 DONE** (`cmux.ts`: cmux/cmux_log/cmux_status/cmux_notify, send_to_surface, role_for_current_surface, surface_for_role, workspace_enabled; role/surface/enabled는 격리 workspace로 오라클 검증, subprocess는 충실 포팅[Bun spawnSync가 런타임 PATH override를 무시해 fake-cmux 불가 → 빈-surface 가드만 테스트]). 4b-2 TODO(generate_session_report, start/finish_review, 훅 디스패치(`hooks.ts`) + JSON 계약/정규식 회귀). |
 | **5** | **CLI 명령 + ccr-hook.py 제거** — `cli.ts`(argparse 대체)와 `commands/*.ts` 완성, parity 전체 검증 후 `ccr-hook.py`(및 종국에 `ccr.sh`)를 제거하고 Bun 런타임을 진실 공급원으로 승격. | `cli.ts`, `commands/*.ts`, parity 리포트 | TODO |
 
 각 Phase는 직전 Phase의 골든/회귀 테스트가 통과해야 다음으로 진행한다. Phase 5 완료 전까지 `ccr.sh`는 절대 제거하지 않는다.
@@ -154,10 +154,12 @@ cmux/
 - **골든 net + 드리프트 가드 추가** — `test/golden*` 픽스처와 `scripts/check-templates-sync.ts`(byte parity 단언)를 추가했다.
 - **툴체인** — **Bun 1.3.11** 사용 가능. `package.json`(`type=module`, `engines.bun>=1.0.0`, scripts: `install:ccr`/`test`/`check:sync`/`typecheck`)과 strict `tsconfig.json`이 준비되어 있다.
 
-미생성/후속(다음 라운드):
+> 비고: 이 7절은 전환 착수 시점(Phase 0/1)의 스냅샷이다. 진행 현황은 아래 Phase별 산출물 절(2a/2b/3)과 5절 단계 표가 최신 기준이다.
 
-- `src/lib/*`, `src/commands/*`, `src/cli.ts` 디렉터리는 아직 생성되지 않았다(Phase 2 이후).
-- `ccr-hook.py`의 Bun 포팅은 시작 전이며 Phase 5에서 parity 검증 후 제거 대상이다.
+미생성/후속(다음 라운드 기준 — 갱신):
+
+- `src/lib/*`는 Phase 2a/2b/3에서 생성되었다(`pycompat`/`constants`/`text`/`diff`/`decision`/`intent`/`tool`/`misc`/`request`/`io`/`paths`/`lock`/`git`). `src/commands/*`와 `src/cli.ts`는 아직 미생성이며 Phase 5 대상이다.
+- `ccr-hook.py`의 Bun 포팅은 Phase 2a~3까지 진행되었고(순수 유틸 + I/O/락/git 계층), 리뷰 코어·훅 디스패치(Phase 4)와 CLI(Phase 5)가 남아 있다. parity 전체 검증 후 Phase 5에서 제거 대상이다.
 
 > 비고: `ccr-hook.py`는 현재 추출본 기준 3754 라인이며, 인벤토리상 명목 수치는 3757 라인이다(추출/정규화에 따른 미세 차이). 위 byte parity 기준값(195,891)은 이번 라운드의 검증 산출물 수치를 그대로 기록한 것이다.
 
@@ -174,6 +176,17 @@ cmux/
 - 기존 leaf 모듈을 재사용: `renderIntentSection`(intent.ts), `truncateText`/`fencedMarkdownBlock`(text.ts), `strip`(pycompat). 신규 보조: `pyGet`(dict.get 시맨틱), `pyStr`(None/True/False 포함 Python str() 보간), `pyTruthyObj`(빈 dict는 falsy인 Python `if d:` 시맨틱).
 - **차등 테스트**: `request_markdown` 24케이스 + `scope_request_markdown` 22케이스를 추가(부분 인자배열로 positional 기본값까지 점진 검증). 다국어/이모지/백틱 펜스 에스컬레이션/12000+ 코드포인트 절단/빈 dict 등 엣지를 포함. 전체 스위트 **699 pass / 0 fail**(차등 단독), 전체 **736 pass / 0 fail**.
 - 오라클이 잡아낸 분기 2건(`previous_review`/`worker_followup`가 빈 dict일 때 JS에서는 truthy라 섹션을 잘못 방출)은 **포팅 버그**였고 `pyTruthyObj`로 **수정**했다 — 수용된 분기가 아니라 정정된 결함이다.
+- **리뷰 프로세스 프롬프트 업데이트**: `request_markdown`/`scope_request_markdown`의 "Review process" 블록을 기존 "6 subagents/6 렌즈"에서 **parallel-code-review 스타일 8렌즈(A1–A8) 독립 병렬 리뷰**(루트원인 중복 클러스터링, 로컬 증거 검증, 희귀 단독 발견 보존)로 교체했다. **결정 계약은 불변**(`REVIEW_DECISION:` + `## Must Fix`/`## Should Consider`/`## Verdict` 그대로 — `parse_decision`/`_count_must_fix_in_text` 무영향). 세 진실원(`ccr.sh` 히어독 ↔ `templates/bin/ccr-hook.py` byte-identical via check:sync ↔ `src/lib/request.ts` via 차등테스트)에 동일 적용·재검증했다.
+
+### Phase 3 산출물 (I/O + 락 + git/diff 수집 포팅)
+
+- **`src/lib/io.ts`**: `now`/`loadJson`/`writeJson`/`appendJsonl`/`readText`. 핵심은 **바이트 안정 직렬화**다 — `writeJson`은 `JSON.stringify(data, null, 2)+"\n"`가 Python `json.dumps(ensure_ascii=False, indent=2)`와 정확히 일치함을 활용하고, `appendJsonl`은 그렇지 않으므로(`JSON.stringify`는 공백 없는 구분자에 키 정렬 없음) `pyJsonCompactSorted`가 Python의 `", "`/`": "` 구분자 + 재귀 키 정렬(`sort_keys=True`)을 재현한다. `getOrNull`은 `dict.get(k)`의 None 기본값을 모사(`undefined`→`null`)해 `JSON.stringify`가 키를 누락하지 않게 한다.
+- **`src/lib/paths.ts`**: `workspaceId`/`surfaceId`/`rootForCwd`/`sessionDir`/`sessionContextPath`/`sessionLedgerPath`.
+- **`src/lib/lock.ts`**: `lockedState`(higher-order — Python contextmanager의 `with` 본문을 콜백으로 치환)/`writeStatus`/`markDirty`/`clearDirty`/`hasDirty`/`ensureSession`. 모든 상태 객체는 Python dict와 **동일한 키 삽입 순서**로 구성해 indent 출력이 바이트 일치한다.
+- **`src/lib/git.ts`**: `git`/`insideGit`/`readUntrackedPatch`/`collectDiff`/`computeDeltaPatch`. Phase 2a의 순수 diff 헬퍼(diff.ts)를 재사용하고 I/O 셸만 추가. `collectDiff`의 `diff_hash`는 잘리지 않은 전체 텍스트의 `node:crypto` sha256이라, 한 바이트라도 어긋나면 해시가 달라진다.
+- **`pycompat.ts`**: `splitlinesKeepends`(Python `str.splitlines(keepends=True)`) 추가 — `readUntrackedPatch`가 사용.
+- **보안 하드닝(리뷰 반영, py↔ts 동일 적용)**: (1) `sanitize`가 all-dots 세그먼트(`.`/`..`)를 언더스코어로 remap해 `sessionDir` 경로 이탈 차단. (2) `read_untracked_patch`가 심링크-해석된 repo-상대 경로에 `safe_rel_path`를 재실행해 in-tree 심링크의 민감파일 유출 차단. (3) `collect_diff`의 `git diff`에 `--no-ext-diff --no-textconv` 부여(저장소 설정 diff 헬퍼 실행 방지). (4) 모든 파일 쓰기 경로가 예측 불가 랜덤명 + `O_EXCL` no-follow 생성 후 `rename`으로 원자 교체(`write_json`/`computeDeltaPatch`의 TS 공용 `writeFileAtomic`, py는 `tempfile.mkstemp`+`os.replace`)하고, append 경로(`append_jsonl`)는 `O_NOFOLLOW`로 열어 적대적 심링크 클로버를 차단. (5) 락을 **디렉터리 락**(`state.lock.d`, 원자적 `mkdir` acquire + `<dir>/owner` 토큰을 full-write 후 `readOwner===myToken` 재검증 + 원자적 `rename` 회수)으로 전환해 파일+reaper 설계의 반복된 reaper 경쟁을 reaper 제거로 근본 해소(D8). 각 항목 회귀 테스트 추가(동시 dead-lock 회수 경쟁, 무-사전락 순수 경합, owner-less/empty/corrupt owner 회수, Python-오라클 적대적 심링크, append_jsonl/computeDeltaPatch 심링크, writeJson 직렬화·rename 실패 시 temp 정리 포함).
+- **통합 테스트** `test/phase3.test.ts` + `test/phase3-probe.py` + `test/phase3-lock-runner.ts`: 순수함수가 아니므로(FS/subprocess) Python 런타임과 TS를 **병렬 임시 디렉터리/공유 임시 git repo**에 실행하고 산출물을 바이트 비교한다 — state/status/dirty/session.json, events.jsonl(타임스탬프만 `<TS>`로 정규화), 그리고 `collectDiff` 전체 튜플(특히 sha256 `diff_hash`). 부패 상태 fallback, `last_report` 보존, `created_at` 보존(비-타임스탬프 sentinel로 검증), 민감/바이너리/대용량/혼합개행 untracked 파일 제외·인코딩, **심볼릭 링크 외부유출 차단(realpath 정규화) 및 in-tree 심링크 패리티**, **별도 프로세스로 구동하는 락 회귀(live-holder는 절대 steal 안 됨, dead-PID 다중 경쟁자 reclaim에서 lost-update 없음)**까지 커버한다. 모든 케이스가 통과하며 전체 스위트도 green(절대 통과 수치는 라운드마다 바뀌므로 기록하지 않는다).
 
 ---
 
@@ -190,3 +203,6 @@ cmux/
 | D5 | `misc.ts` `doctorActionItems` | `row.get(k,"")`는 키 부재 시만 `""`; 값이 명시적 `null`이면 Python은 `None`, TS는 `?? ""`로 `""` | row 필드값이 명시적 `null` | 수용. row는 내부 코드가 항상 문자열로 채움. |
 | D6 | `pycompat.ts` `posixParts` | `PurePosixPath('//a')`는 POSIX 특례로 root가 `'//'`, 포팅은 `'/'` | 선행 `//` 경로 | 무해. `safe_rel_path`의 `startsWith('/')` 가드가 선행 슬래시를 먼저 거부. |
 | D7 | `request.ts` `Path` 인자(`diff_file`/`delta_file`/`scope_file`) | 런타임은 `Path` 객체를 넘기고 f-string이 `str(Path)`로 정규화(`Path('a//b')`→`'a/b'`)하지만, 차등 테스트는 동일 문자열을 양쪽에 직접 전달하므로 정규화가 발생하지 않음 | 비정규 경로 문자열(`a//b`, 후행 `/`)을 인자로 전달 | 수용(테스트 모델링 한정). 빌더는 보간만 하므로 양쪽이 동일 입력을 받으면 출력도 동일. 실제 호출자는 항상 정규화된 `Path`를 넘기며, 경로 정규화는 `safe_rel_path`/`posixParts`(D6)에서 이미 별도 검증됨. |
+| D8 | `lock.ts` `lockedState` 락 메커니즘 | Python은 `fcntl.flock(LOCK_EX)`(블로킹, 커널이 fd close/프로세스 종료 시 자동 해제). 포팅은 **디렉터리 락** `<root>/state.lock.d`: acquire=원자적 `mkdirSync` 후 `pid:nonce` owner 토큰을 **원자 발행**(dir 내부 private temp를 full-write→`linkSync`로 `owner` 생성, link 성공 즉시 HELD 기록)하여 owner가 부분/빈 상태로 노출되지 않고 발행 실패 시 owner-less dir만 남아 자가복구; 살아있는 홀더(`process.kill(pid,0)`)는 block; 죽은/owner-less(grace 1s) 홀더는 **회수를 mkdir reclaim-lock으로 직렬화**하고 그 lock 아래에서 owner를 재확인한 뒤 디렉터리를 원자적 `renameSync`+`rmSync`로 제거(reclaim-lock은 마이크로초 보유라 age로 stale 회수) | 동시 훅이 동일 `root`에 경합하거나 홀더가 락 보유 중/발행 중 크래시 | 수용(위험 1에서 예고). **상호배제 의미만** 보존 — 결과 `state.json` 바이트 동일. `lockDir` 존재가 신규 `mkdir`를 막으므로, reclaim-lock 아래 owner 재확인→rename 사이에 owner가 live가 될 수 없어 살아있는 락을 옮기지 않는다(R9에서 늦은 reclaimer가 갓 재획득된 live dir을 rename하던 경쟁을 해소). 파일+reaper 설계의 반복 경쟁(R1~R3)은 reaper 제거로 해소. |
+| D9 | `lock.ts` `lockedState` 호출 형태 / 재진입 | Python은 `with locked_state(root) as state:` contextmanager(yield 후 본문 실행→쓰기). 포팅은 `lockedState(root, (state) => {...})` 고차함수(콜백이 `with` 본문 역할) | — (API 형태 차이); 동일 `root`에 **중첩** 호출 | 수용. JS에 contextmanager 동치가 없어 콜백으로 치환. load→lock→mutate→write→unlock 순서·부작용 동일. 동일 root 재진입은 **즉시 throw**(블로킹=데드락, 회수=상호배제 붕괴이므로 fail-fast — Python flock도 이 경우 데드락). 프로세스 내 보유 토큰(`HELD_TOKENS`)을 추적해 자기 라이브 락은 회수하지 않는다(R2). 또한 `realpathSync(root)`로 락 정체성을 **정규화**해 심링크/상대경로 별칭이 가드를 우회하지 못하게 한다(R3). |
+| D10 | `lock.ts` 크로스런타임 락 상호운용 | Python `fcntl.flock` ↔ Bun 락파일은 상호배제하지 못함 — flock 보유 상태는 파일 내용에 드러나지 않고(Python은 빈 비잠금 `state.lock`를 남김), 0-dep로 이식 가능한 flock 바인딩도 없음 | Python 훅과 Bun 포트가 동일 `root`에 **동시** 실행되는 가상 시나리오 | 수용(R1 리뷰 반영). 콘텐츠 기반 스킴으로는 flock 보유를 감지할 수 없는 **본질적 한계**. Phase 5에서 Python 런타임을 통째로 대체하므로 두 런타임은 동시 실행되지 않는다 → Bun 락은 **Bun 홀더 간** 상호배제만 보장(토큰 `pid:nonce`로 강화). |

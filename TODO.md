@@ -268,3 +268,103 @@
 - [x] Fix the empty-dict truthiness divergence the oracle caught (`pyTruthyObj` mirrors Python `if d:`).
 - [x] Mark Phase 2b done in `docs/ccr-js-migration-plan.md` and record the Path-stringification modeling caveat (D7).
 - [x] Re-run `bun test`, `bun run typecheck`, and `bun run check:sync` (736 pass / 0 fail; templates unchanged).
+
+## migration-phase-3-lock-state-git
+
+- [x] Port the I/O layer to `src/lib/io.ts` (`now`, `loadJson`, `writeJson`, `appendJsonl`, `readText`) with byte-stable serialization (`pyJsonCompactSorted` for the sort_keys compact form; `getOrNull` for dict.get None semantics).
+- [x] Port path/identity helpers to `src/lib/paths.ts` (`workspaceId`, `surfaceId`, `rootForCwd`, `sessionDir`, ...).
+- [x] Port the locked state + status/dirty/session updates to `src/lib/lock.ts`, reimplementing the fcntl.flock advisory lock as an O_EXCL lockfile with stale recovery (semantics preserved; D8/D9).
+- [x] Port the git/diff-collection shell to `src/lib/git.ts` (`git`, `insideGit`, `readUntrackedPatch`, `collectDiff` with node:crypto sha256, `computeDeltaPatch`), reusing the Phase 2a pure diff helpers.
+- [x] Add `splitlinesKeepends` to `pycompat.ts` for `readUntrackedPatch`.
+- [x] Add the oracle integration test (`test/phase3.test.ts` + `test/phase3-probe.py`): byte-parity for state/status/dirty/session.json + events.jsonl, full `collectDiff` tuple incl. sha256 diff_hash, against parallel temp dirs / a shared temp git repo.
+- [x] Mark Phase 3 done in `docs/ccr-js-migration-plan.md` and record divergences D7/D8/D9.
+- [x] Re-run `bun test`, `bun run typecheck`, `bun run check:sync` (full suite green; templates unchanged).
+
+## reviewer-parallel-8-lens
+
+- [x] Replace the reviewer "Review process" block (6 subagents/6 lenses) with a parallel-code-review-style 8-lens (A1–A8) independent review: root-cause duplicate clustering, local evidence verification, rare-finding preservation.
+- [x] Apply identically in `request_markdown` and `scope_request_markdown` across the three byte-synced sources: `ccr.sh` heredoc, `templates/bin/ccr-hook.py`, `src/lib/request.ts`.
+- [x] Preserve the decision contract byte-for-byte (`REVIEW_DECISION:` + Must Fix/Should Consider/Verdict) so `parse_decision` / `_count_must_fix_in_text` are unaffected.
+- [x] Verify: `check:sync` byte-identical, `typecheck` clean, differential (request/scope vs Python oracle) green, full suite green; rendered request shows A1–A8 + decision line and no "Spawn 6".
+
+## reviewer-parallel-8-lens-r1-fixes
+
+- [x] MF2: remove the severity->bucket mapping from both request builders; defer classification to the existing Must Fix / Should Consider bar (ccr.sh + templates + request.ts).
+- [x] MF3: add `test/request-contract.test.ts` content assertions (A1–A8, parallel framing, methodology, unchanged decision sections, no "Spawn 6", no severity mapping).
+- [x] MF4: `read_untracked_patch`/`readUntrackedPatch` re-run `safe_rel_path` on the symlink-RESOLVED repo-relative path to block in-tree symlinks to sensitive targets (ccr.sh + templates + git.ts) + regression test.
+- [x] MF5: pass `--no-ext-diff --no-textconv` on staged+unstaged `git diff` in `collect_diff`/`collectDiff` (ccr.sh + templates + git.ts) + textconv regression test.
+- [x] MF6: per-acquisition `pid:nonce` lock token (precise reclaim/release) + same-PID-prior-stale regression test; document the cross-runtime flock boundary as D10 (push-back: inherently impossible 0-dep, runtimes never coexist).
+- [x] MF1: update the session `intent.md` to cover the full diff (Phase 3 + prompt upgrade + these fixes).
+- [x] Re-verify: `check:sync`, `typecheck`, differential, full suite all green.
+
+## reviewer-parallel-8-lens-r2-fixes
+
+- [x] MF1: `lock.ts` tracks in-process held tokens (`HELD_TOKENS`); reentrant `lockedState` on the same root throws instead of reclaiming the live outer lock; reclaim skips a held token; release clears it. Added nested-lock + sequential-not-reentrant regression tests (D9 updated).
+- [x] MF2: `test/request-contract.test.ts` parameterizes the FULL prompt contract (A1–A8, methodology, decision sections, negatives) across BOTH `requestMarkdown` and `scopeRequestMarkdown`.
+- [x] MF3: diff-helper hardening tests now cover `--no-textconv` AND `--no-ext-diff` for BOTH staged and unstaged paths (helper scripts kept outside the repo).
+- [x] Should-Consider: confirmed the user chose the CCR-native (skill-style, not skill-invoking) implementation; non-goal stands.
+- [x] Re-verify: `typecheck`, `check:sync`, lock stability (3x), full suite green.
+
+## reviewer-parallel-8-lens-r3-fixes
+
+- [x] MF1: `lockedState` canonicalizes the root via `realpathSync` after `mkdirSync` and uses that single canonical lock/state path for acquire/reclaim/release + `HELD_TOKENS`, closing the symlink/alias bypass of the reentrancy guard (D9 updated). Added a nested-via-symlink-alias regression test.
+- [x] Re-verify: `typecheck`, lock stability (3x), full suite, `check:sync` all green.
+
+## reviewer-parallel-8-lens-r4-fixes
+
+- [x] MF1: reaper sentinel is owner-tokenized + reclaimed only when its owner PID is dead (removed the mtime-based steal); state.lock unlink re-verifies both reaper-token ownership and `cur === observed`; reaper released only if still ours.
+- [x] MF2: `sanitize` remaps all-dots segments (`.`/`..`/…) to underscores in `text.ts` + `ccr.sh` + `templates/bin/ccr-hook.py`, preventing `sessionDir` path traversal; added differential cases + a `sessionDir` containment test.
+- [x] MF3: `writeJson` (io.ts) and `publishLock` (lock.ts) use a random temp name + `O_EXCL` no-follow create; Python `write_json` mirrors via `tempfile.mkstemp` + `os.replace` (ccr.sh + templates); added hostile-symlink regression tests.
+- [x] Should-Consider (PID reuse): documented accepted caveat (errs safe — blocks, never steals; lease/heartbeat out of scope for a same-runtime advisory lock).
+- [x] Re-verify: `typecheck`, `check:sync`, lock stability (3x), full suite (811 pass / 0 fail) all green.
+
+## reviewer-parallel-8-lens-r5-fixes
+
+- [x] MF1: actually land the Python `write_json` hardening (it was claimed but missing) — `tempfile.mkstemp` + `os.replace` + cleanup-on-failure in `ccr.sh` + `templates/bin/ccr-hook.py`; added a Python-oracle hostile-symlink regression test.
+- [x] MF2: replace the read-then-unlink reaper cleanup (TOCTOU) with an atomic rename-claim (`detachReaper`) + `restoreReaper` for dead-reaper cleanup and release; added a concurrent-dead-reaper-sentinel regression test.
+- [x] Should-Consider: `writeJson` (io.ts) + `publishLock` (lock.ts) clean the random temp on ANY failure (write/close/rename/link), not just on success.
+- [x] Re-verify: `typecheck`, `check:sync`, lock stability (3x), full suite (813 pass / 0 fail) all green.
+
+## reviewer-parallel-8-lens-r6-fixes
+
+- [x] MF1: replace the file+reaper lock (which had a recurring reaper race) with a DIRECTORY lock at `<root>/state.lock.d` — atomic `mkdir` acquire + `O_EXCL` owner-file write; dead-holder reclaim via atomic `rename` of the dir (race-free because the dir blocks all new acquirers). Removed the reaper entirely; rewrote lock regression tests; added owner-less-init reclaim + a no-pre-existing-lock pure-contention test (D8/D9 updated).
+- [x] Should-Consider: update the `io.ts` `writeJson` docblock to the randomized-exclusive-temp behavior; add a `writeJson` serialization-failure temp-cleanup test.
+- [x] Re-verify: `typecheck`, `check:sync`, lock stability (3x), full suite (815 pass / 0 fail) all green.
+
+## reviewer-parallel-8-lens-r7-fixes
+
+- [x] MF1: dir-lock owner publication does a FULL write (`writeAllSync`) then verifies `readOwner(ownerPath) === myToken` before returning (no stolen-lock proceed), with `removeOwnedDir` cleanup on publish failure; added corrupt/empty/owner-less reclaim tests.
+- [x] MF2: `appendJsonl` opens `O_NOFOLLOW` (TS + Python `os.open`) so a hostile `events.jsonl` symlink is refused; symlink regression added.
+- [x] MF3: `computeDeltaPatch` writes via shared `writeFileAtomic` (random temp + `O_EXCL` + rename; Python `tempfile.mkstemp` + `os.replace`); hostile-dest-symlink regression added.
+- [x] Factored `writeFileAtomic`/`writeAllSync` in `io.ts` (reused by `writeJson` + `computeDeltaPatch`).
+- [x] Should-Consider: `writeJson` rename-failure (dest is a dir) temp-cleanup test; fixed the stale `publishLock` doc reference (D8 / hardening summary).
+- [x] Re-verify: `typecheck`, `check:sync`, Python syntax, lock stability (3x), full suite (821 pass / 0 fail) all green.
+
+## reviewer-parallel-8-lens-r8-fixes
+
+- [x] MF1: drop the path-based `removeOwnedDir` cleanup on publish failure (it could unlink a NEW live holder's dir at the same path); just rethrow and leave the owner-less dir for the grace-reclaim path. Added an owner-less-leftover-under-contention regression.
+- [x] MF2: add Python-oracle symlink negative tests via the probe (new `compute-delta-patch` op): symlinked `events.jsonl` makes Python `append_jsonl` raise (O_NOFOLLOW); symlinked `delta.patch` is replaced not clobbered by Python `compute_delta_patch`.
+- [x] Re-verify: `typecheck`, `check:sync`, Python syntax, lock stability (3x), full suite (824 pass / 0 fail) all green.
+
+## reviewer-parallel-8-lens-r9-fixes
+
+- [x] MF1: publish the lock owner ATOMICALLY (private temp inside dir + `linkSync` to `owner`; record `HELD` on link success), so a write/close failure before the link leaves an owner-less (self-healing) dir and never a partial/live owner that's never released. Identity-safe temp cleanup.
+- [x] Fix the reclaim race the new test exposed: serialize reclaim via an atomic `mkdir` reclaim-lock and re-read the owner under it before renaming (no live dir can be renamed); `reclaimDeadLock` uses `rmSync` recursive; reclaim-lock is age-stealable (microsecond hold).
+- [x] Added deterministic crashed-mid-publish reclaim test; previously-flaky contention test now stable (0/8, lock describe 14-pass ×5).
+- [x] Re-verify: `typecheck`, `check:sync`, lock stability (5x), full suite (825 pass / 0 fail) all green.
+
+## migration-phase-4a-session-review-report-helpers
+
+- [x] Port FS session/intent/ledger helpers to `src/lib/session.ts`: `captureSessionContext`, `loadSessionContext`, `loadSessionIntent`, `appendLedger`, `buildIterationTable`, `loadReviewInstructions` (kept `intent.ts` pure; reuse its `extractIntentFromMessage`).
+- [x] Port review-flow FS helpers to `src/lib/review.ts`: `findPreviousRoundDir`, `parsePreviousReview`, `buildWorkerFollowup`.
+- [x] Port report FS helpers to `src/lib/report.ts`: `latestSessionId`, `roundMustFixCount`, `roundFilesTouched`.
+- [x] Add `CONFIG_ROOT` + `sessionIntentPath` to `paths.ts`.
+- [x] Extend `test/phase3-probe.py` with Phase 4a oracle ops; add `test/phase4.test.ts` (byte/return parity vs Python on shared/parallel temp dirs).
+- [x] Verify: `typecheck`, `check:sync` (ccr.sh/templates untouched), full suite (847 pass / 0 fail).
+## migration-phase-4b1-cmux
+
+- [x] Port the cmux surface/role layer to `src/lib/cmux.ts`: `cmux`, `cmuxLog`, `cmuxStatus`, `cmuxNotify`, `sendToSurface`, `roleForCurrentSurface`, `surfaceForRole`, `workspaceEnabled`.
+- [x] Add `ENABLED_FILE` + `workspaceConfigDir` to `paths.ts`.
+- [x] Tests (`test/phase4b.test.ts` + probe ops): role/surface oracle parity via an isolated unique workspace under CONFIG_ROOT; workspace_enabled safe false-paths; sendToSurface empty-surface guard. (Subprocess success/exit branches not unit-tested — Bun spawnSync ignores runtime PATH overrides so a fake cmux can't be substituted; faithful port verified by review.)
+- [x] Verify: `typecheck`, `check:sync`, full suite (853 pass / 0 fail).
+- [ ] Phase 4b-2 (next): `generate_session_report` (report.ts), `start_review`/`finish_review` (review.ts orchestration), hook dispatch `handle_hook`/`handle_pre_tool`/`handle_user_prompt_submit` + `ensure_info_exclude` (hooks.ts), with JSON-contract (risk 7) + regex (risk 4) regression.
