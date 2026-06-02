@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+case "${1:-}" in -h|--help)
+  cat <<USAGE
+Usage: ccr-check [--json]
+Run consolidated CCR diagnostics: selftest, doctor summary, readiness, preview, and config overrides.
+USAGE
+  exit 0
+;; esac
+exec python3 "$HOME/.local/bin/ccr-hook.py" --command check "$@"

@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+case "${1:-}" in -h|--help)
+  cat <<USAGE
+Usage: ccr-preview [--json]
+Preview whether the current git diff would be eligible for an automatic CCR review.
+Does not mark dirty, consume skip markers, create rounds, or send handoffs.
+USAGE
+  exit 0
+;; esac
+exec python3 "$HOME/.local/bin/ccr-hook.py" --command preview "$@"

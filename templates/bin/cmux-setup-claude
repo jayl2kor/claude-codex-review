@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source "$HOME/.local/bin/ccr-lib.sh"
+
+if ! inside_cmux; then
+  echo "cmux surface 안에서 실행해야 합니다."
+  exit 1
+fi
+
+mkdir -p "$(workspace_config_dir)"
+printf '%s\n' "$CMUX_SURFACE_ID" > "$(claude_surface_file)"
+
+echo "현재 surface를 Claude 탭으로 등록했습니다."
+
+CCR_CONFIG_ROOT="$HOME/.config/claude-codex-review"
+CCR_PROMPT_ARGS=()
+if [ "${CCR_DUAL_MODE:-1}" = "0" ]; then
+  echo "CCR_DUAL_MODE=0 이 설정되어 dual-mode dev/reviewer 프롬프트를 건너뜁니다."
+else
+  if [ -f "$CCR_CONFIG_ROOT/dev-prompt.md" ]; then
+    CCR_PROMPT_ARGS+=(--append-system-prompt-file "$CCR_CONFIG_ROOT/dev-prompt.md")
+    echo "CCR dual-mode 활성화 (기본): $CCR_CONFIG_ROOT/dev-prompt.md 를 시스템 프롬프트에 append 합니다."
+    echo "(끄려면 CCR_DUAL_MODE=0 으로 실행하세요.)"
+  else
+    echo "경고: $CCR_CONFIG_ROOT/dev-prompt.md 가 없습니다. bash ccr.sh 로 재설치하세요." >&2
+  fi
+fi
+
+echo "Claude Code를 bypass permissions 모드로 실행합니다."
+exec claude --dangerously-skip-permissions ${CCR_PROMPT_ARGS[@]+"${CCR_PROMPT_ARGS[@]}"} "$@"

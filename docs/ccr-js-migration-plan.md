@@ -1,0 +1,192 @@
+# CCR Bun 마이그레이션 계획 (ccr.sh → Bun 프로젝트)
+
+이 문서는 현재 단일 설치 스크립트인 [`../ccr.sh`](../ccr.sh)와 그 안에 임베드된 Python 런타임 `ccr-hook.py`를 Bun 기반 프로젝트로 전환하기 위한 단계별 계획을 정의한다. 구조 개요는 [architecture.md](architecture.md), 검증 절차는 [validation.md](validation.md), 사용자 명령은 [commands.md](commands.md)를 함께 참고한다.
+
+> 핵심 원칙: **비파괴(non-destructive) 마이그레이션**. parity가 검증되기 전까지 `ccr.sh`와 `README.md`는 단일 진실 공급원(source of truth)으로 절대 변경하지 않는다. `install.ts`는 컴파일/타입체크만 하며 절대 실행하지 않는다(`~/.claude`, `~/.codex`, `~/.local/bin`, `~/.zshrc`, `~/.config` 비변형). npm 런타임 의존성은 0개로 유지하고 Bun/Node 내장 모듈(`node:fs`, `node:path`, `node:os`, `node:child_process`, `Bun.*`)만 사용한다.
+
+---
+
+## 1. 현황 진단
+
+`ccr.sh`는 런타임이 아니라 **설치기(installer)** 다. `bash ccr.sh`를 실행하면 heredoc으로 임베드된 파일들을 `~/.local/bin`, `~/.claude/commands`, `~/.config`(CONFIG_ROOT) 등에 펼쳐 쓴다. 즉 `ccr.sh`의 대부분은 코드가 아니라 "쓰여질 파일들의 페이로드"다.
+
+| 항목 | 값 |
+|---|---|
+| `ccr.sh` 총 라인 수 | 5091 |
+| `ccr.sh` 파일 크기 | 196,883 bytes |
+| 임베드 Python 런타임 `ccr-hook.py` 라인 수 | 약 3757 (현재 추출본 3754) |
+| `ccr.sh` 중 `ccr-hook.py`가 차지하는 비중 | 약 73% |
+| `ccr-hook.py` 최상위 함수 수 | 118 |
+| `ccr-hook.py` 클래스 수 | 0 (절차적, 함수 중심) |
+| `ccr-hook.py` 외부 의존성 | 없음 (Python stdlib 전용) |
+
+`ccr-hook.py`가 사용하는 stdlib: `argparse`, `calendar`, `contextlib`, `fcntl`, `hashlib`, `io`, `json`, `os`, `re`, `shutil`, `subprocess`, `sys`, `tempfile`, `time`, `zipfile`, `pathlib.Path`, `typing.Any`, `from __future__ import annotations`. 외부 패키지가 전혀 없다는 점이 마이그레이션을 단순화한다 — 모든 위험은 stdlib 동등물 매핑으로 환원된다.
+
+### 임베드 산출물 인벤토리
+
+`ccr.sh`는 다음 산출물을 heredoc(`cat > ... <<'EOF'` / `<<'PY'` / `<<'CCR_*_EOF'`)으로 펼친다.
+
+| 분류 | 개수 | 내용 |
+|---|---|---|
+| bin 파일 | 27 | `ccr-hook.py`, `ccr-lib.sh`, `ccr-hook-claude`, `ccr-hook-codex`, `cmux-setup-claude`, `cmux-setup-codex`, `ccr-help`, 그리고 `ccr-*` 사용자 명령 래퍼들(`ccr-status`, `ccr-ready`, `ccr-request`, `ccr-report`, `ccr-doctor`, `ccr-support`, `ccr-selftest`, `ccr-uninstall`, `ccr-preview`, `ccr-prune`, `ccr-config`, `ccr-events`, `ccr-check`, `ccr-history`, `ccr-show`, `ccr-skip-next`, `ccr-cancel`, `ccr-reset`, `ccr-enable`, `ccr-disable`) |
+| claude-commands | 14 | `ccr-request.md`, `ccr-status.md`, `ccr-history.md`, `ccr-events.md`, `ccr-skip-next.md`, `ccr-report.md`, `ccr-doctor.md`, `ccr-support.md`, `ccr-ready.md`, `ccr-selftest.md`, `ccr-preview.md`, `ccr-prune.md`, `ccr-config.md`, `ccr-check.md` |
+| config 파일 | 3 | `dev-prompt.md`, `reviewer-prompt.md`, `codex-home/AGENTS.md` |
+| **펼침 파일 합계** | **44** | (위 27 + 14 + 3) |
+| 인라인 설치 시점 Python 블록 | 3 | (1) settings-merge: `~/.claude/settings.json` + `~/.codex/hooks.json` 병합(@ccr.sh:4248), (2) json-validate: 병합 후 JSON 유효성 검증(@ccr.sh:5031), (3) selftest: 설치 직후 런타임 스모크 테스트(@ccr.sh:4746) |
+
+3개 인라인 블록은 펼쳐지지 않고 설치 과정 안에서만 실행된다. 이 중 selftest 블록은 이번 라운드에 `templates/selftest-install.py`로 추출되었다(아래 7절 참조).
+
+---
+
+## 2. 목표 디렉터리 구조
+
+전환의 1차 목표는 `ccr.sh`의 monolith를 "설치 로직(TypeScript) + 템플릿(데이터)"으로 분리하는 것이다. 런타임(`ccr-hook.py`)의 Bun 포팅은 그 다음 단계다.
+
+```text
+cmux/
+├── ccr.sh                         # 단일 진실 공급원 (parity 검증 전까지 불변)
+├── README.md                      # 불변 (전환기 진실 공급원)
+├── package.json                   # type=module, engines.bun, scripts(install:ccr/test/check:sync/typecheck)
+├── tsconfig.json                  # strict, bundler resolution, noEmit, allowImportingTsExtensions
+├── src/
+│   ├── install.ts                 # ccr.sh의 설치 로직 TypeScript 포팅 (실행 금지, 컴파일/타입체크만)
+│   ├── lib/                       # (3절) 런타임 모듈 분할 — ccr-hook.py 포팅의 도착지
+│   │   ├── io.ts
+│   │   ├── paths.ts
+│   │   ├── lock.ts
+│   │   ├── git.ts
+│   │   ├── cmux.ts
+│   │   ├── intent.ts
+│   │   ├── review.ts
+│   │   ├── report.ts
+│   │   └── hooks.ts
+│   ├── commands/                  # ccr-* 명령별 구현 (status.ts, ready.ts, doctor.ts, ...)
+│   └── cli.ts                     # argparse 대체 진입점 (util.parseArgs)
+├── templates/                     # ccr.sh heredoc 페이로드를 그대로 파일화 (44개, byte-identical)
+│   ├── bin/                       # 27개
+│   ├── claude-commands/           # 14개
+│   ├── config/                    # 3개 (dev-prompt.md, reviewer-prompt.md, codex-home/AGENTS.md)
+│   └── selftest-install.py        # 설치 시점 selftest 블록 추출본
+├── test/
+│   ├── golden/                    # ccr.sh ↔ templates 재구성 byte parity 고정값
+│   └── golden*.test.ts            # Bun 테스트(net) + drift guard
+└── scripts/
+    └── check-templates-sync.ts    # templates/가 ccr.sh heredoc과 byte-identical인지 단언
+```
+
+`src/`, `src/lib/`, `src/commands/`, `test/`, `scripts/`는 현 시점 아직 미생성 디렉터리이며, `package.json`은 이미 이 경로들을 가리키도록 작성되어 있다. **`ccr.sh`는 parity가 완전히 검증될 때까지 진실 공급원으로 남는다.**
+
+---
+
+## 3. 런타임 모듈 분할안 (ccr-hook.py의 향후 Bun 포팅)
+
+`ccr-hook.py`의 118개 최상위 함수는 0개 클래스 위에 절차적으로 구성되어 있어, 기능 그룹별 모듈 경계가 비교적 자연스럽게 잡힌다. 아래는 함수 그룹 → 제안 모듈 매핑이다. 함수명은 현재 `ccr-hook.py`에 존재하는 대표 함수다.
+
+| 제안 모듈 | 책임 | 대표 함수 |
+|---|---|---|
+| `lib/io.ts` | JSON/텍스트/JSONL 입출력, stdin 파싱, 시각·문자열 유틸 | `now`, `load_json`, `write_json`, `append_jsonl`, `read_stdin_json`, `read_text`, `sanitize`, `_truncate_text`, `_truncate_sections`, `_join_sections` |
+| `lib/paths.ts` | 워크스페이스/서피스 식별, 경로 계산, 세션 디렉터리 | `workspace_id`, `surface_id`, `workspace_config_dir`, `root_for_cwd`, `session_dir`, `session_context_path`, `session_ledger_path`, `session_intent_path`, `skip_marker_path`, `workspace_enabled` |
+| `lib/lock.ts` | 상태 파일 잠금·기본값·dirty 마커 | `locked_state`, `default_state`, `write_status`, `mark_dirty`, `clear_dirty`, `has_dirty`, `ensure_session` |
+| `lib/git.ts` | git 호출, diff 수집·해시·변경 판정 | `git`, `inside_git`, `safe_rel_path`, `diff_pathspecs`, `read_untracked_patch`, `collect_diff`, `_diff_has_content`, `count_changed_lines`, `compute_delta_patch`, `bash_looks_mutating`, `should_mark_dirty_for_tool` |
+| `lib/cmux.ts` | cmux 서피스 통신·역할·핸드오프 | `cmux`, `cmux_log`, `cmux_status`, `cmux_notify`, `send_to_surface`, `role_for_current_surface`, `surface_for_role`, `opposite`, `is_ccr_handoff_prompt` |
+| `lib/intent.ts` | 세션 의도 추출·렌더링·원장 | `capture_session_context`, `load_session_context`, `extract_intent_from_message`, `load_session_intent`, `render_intent_section`, `append_ledger`, `build_iteration_table`, `load_review_instructions` |
+| `lib/review.ts` | 리뷰 시작/종료/결정·요청 마크다운·재시도 회수 | `start_review`, `finish_review`, `parse_decision`, `reviewer_block_response`, `request_markdown`, `scope_request_markdown`, `build_worker_followup`, `parse_previous_review`, `reap_stale_active`, `_active_request_age_seconds`, `consume_skip_marker`, `_count_must_fix_in_text`, `_is_sentinel_must_fix` |
+| `lib/report.ts` | 세션 리포트 생성·라운드 집계 | `generate_session_report`, `_try_generate_report`, `find_previous_round_dir`, `_round_must_fix_count`, `_round_files_touched`, `_files_touched_from_diff_text`, `_fenced_markdown_block`, `_format_duration`, `_latest_session_id` |
+| `lib/hooks.ts` | 훅 이벤트 디스패치 | `handle_hook`, `handle_pre_tool`, `handle_user_prompt_submit`, `tool_name`, `tool_command`, `ensure_info_exclude` |
+| `commands/*.ts` | 사용자 명령 1파일 1명령 | `command_enable`/`disable`/`reset`/`status`/`request`/`cancel`/`history`/`show`/`skip_next`/`report`/`doctor`/`support`/`ready`/`selftest`/`preview`/`prune`/`config`/`events`/`check`/`uninstall`, 보조: `_preview_data`, `_prune_candidates`, `_ready_checks`, `_doctor_action_items`, `_config_doc`, `_check_doc`, `_read_events`, `_run_selftest_case`, `_selftest_cases` |
+| `cli.ts` | 인자 파싱·디스패치 진입점 | `main` (argparse → `util.parseArgs`로 대체) |
+
+포팅 순서는 의존성이 적은 leaf 모듈(`io`, `paths`)부터 상향한다(5절 Phase 2 이후 참조).
+
+---
+
+## 4. 위험 등록부 (Risk Register)
+
+난이도 높은 순으로 정렬. 각 항목은 Python stdlib 의존 → Bun/Node 동등물 매핑 전략이다.
+
+| 순위 | 위험 | 출처 | Bun/Node 전략 | 난이도 |
+|---|---|---|---|---|
+| 1 | **`fcntl.flock` advisory lock** — `locked_state()`가 상태 파일에 LOCK_EX/LOCK_UN을 걸어 동시 훅 갱신을 직렬화(`ccr-hook.py`: `import fcntl`, `fcntl.flock(...LOCK_EX)`/`LOCK_UN`). | `locked_state` | Bun/Node에는 POSIX advisory flock 직접 바인딩이 없다. `O_EXCL` 락파일(원자적 생성 + stale 회수)로 구현하거나, 0-의존성 제약을 완화할 경우 `proper-lockfile` 검토. 동작 의미(블로킹 vs 즉시 실패)와 stale 처리 정책을 byte-stable한 상태 갱신과 함께 보존해야 한다. | 높음 |
+| 2 | **`argparse`** — 단일 flat 파서가 `--command` choices(20개 명령)로 디스패치하며, `action="append"`(`--file`/`--dir`/`--question`/`--note`), `choices=`(`--agent`/`--reviewer`/`--type`), `type=int`(`--limit`/`--round`/`--keep`/`--days`), `set_defaults`(`--use-diff`/`--no-diff` 페어) 등 약 27개 `add_argument`로 35개 수준의 플래그/선택지 표면을 구성. | `main` | `node:util`의 `parseArgs`로 골격을 잡되 append 누적, choices 검증, int 파싱, `--no-*` 부정 페어 기본값은 수작업 후처리로 보강. 미지원 의미(append, choices, set_defaults)는 parseArgs가 자동 처리하지 않으므로 명시 구현 필요. | 높음 |
+| 3 | **`zipfile`** — `ccr-support` 진단 번들을 `ZIP_DEFLATED`로 압축 생성/검증(`ccr-hook.py`: `zipfile.ZipFile(... "w", ZIP_DEFLATED)`, 읽기 시 `ZipFile(bundle)`). | `command_support` | Bun/Node 내장 zip 생성기가 없다. 시스템 `zip`/`unzip` CLI를 `Bun.spawnSync`로 호출하거나, 0-의존성 유지가 어려우면 경량 zip 라이브러리 검토. 아카이브 엔트리 이름·구성(`doctor.json`, VERSION, state/status, events tail, 세션 메타)을 보존. | 중간 |
+| 4 | **`re` vs JS RegExp** — 의도 추출·결정 파싱·markdown fence·sentinel 카운트 등 7개소에서 `re.search/sub/...` 사용. | `extract_intent_from_message`, `parse_decision`, `_fenced_markdown_block`, `_count_must_fix_in_text` 등 | JS RegExp로 직역하되 Python 특유의 차이(인라인 플래그 `(?i)`, `re.MULTILINE`/`re.DOTALL` 의미, `\b` 경계, 비탐욕 매칭, named group 문법, `re.sub` 콜백)를 케이스별로 검증. 결정 파싱은 fenced 예제/blockquote를 verdict로 오인하면 안 되므로 회귀 테스트 필수. | 중간 |
+| 5 | **`hashlib`** — `collect_diff` 전체 텍스트의 `sha256` hexdigest로 diff 변경 판정. | `collect_diff` (`diff_hash = hashlib.sha256(...).hexdigest()`) | `node:crypto`의 `createHash("sha256")`로 직접 대응. UTF-8 인코딩만 일치시키면 동등. | 낮음 |
+| 6 | **`subprocess`** — git 호출과 cmux 통신 등 11개소. | `git`, `cmux`, `send_to_surface` 등 | `Bun.spawnSync`(또는 `node:child_process`)로 대응. stdout/stderr/exit code, 입력 전달, 환경변수 처리만 정합. 동기 호출이라 매핑이 단순. | 낮음 |
+| 7 | **hook stdin/stdout JSON 계약** — 훅은 stdin으로 JSON을 받고 stdout으로 JSON 응답을 낸다. Claude/Codex가 바이트 단위로 파싱하므로 **byte-stable**해야 한다. | `read_stdin_json`, `handle_hook`, `reviewer_block_response` | 키 순서·공백·이스케이프·trailing newline까지 기존 출력과 동일하도록 직렬화 형식을 고정하고, 실제 stdin→stdout을 캡처한 골든 픽스처로 회귀 검증. JS `JSON.stringify`의 기본 출력과 Python `json.dumps`의 차이(공백, non-ASCII 이스케이프)에 특히 주의. | 낮음~중간 |
+
+추가 stdlib(`tempfile`, `shutil`, `calendar`, `contextlib`, `io`)은 `node:fs`/`node:os`/`Date` 동등물로 직역 가능하여 별도 위험으로 분류하지 않는다.
+
+---
+
+## 5. 단계별 계획 (Phase 0..5)
+
+| Phase | 목표 | 산출물 | 상태(이번 라운드) |
+|---|---|---|---|
+| **0** | **골든 테스트 확립** — `ccr.sh` 동작과 templates 재구성에 대한 고정값(byte parity, JSON 계약 등)을 잠근다. | `test/golden*`, `test/golden*.test.ts` | DONE / IN-PROGRESS (net + drift guard 추가됨) |
+| **1** | **설치기 분해** — `ccr.sh`의 heredoc 페이로드를 `templates/`로 추출(byte-identical), 설치 로직을 `src/install.ts`로 포팅. `ccr.sh`는 불변. | `templates/`(44), `src/install.ts`, `templates/selftest-install.py` | DONE / IN-PROGRESS (templates·selftest·install.ts 완료, 컴파일 검증) |
+| **2** | **순수 유틸 포팅** — 의존성 없는 leaf 모듈 우선. | `lib/pycompat.ts`, `lib/constants.ts`, `lib/{text,diff,decision,intent,tool,misc}.ts`, `lib/request.ts` | **2a DONE** (no-I/O 순수 함수 ~26개 + 기반 2개, 오라클 차등테스트 통과). **2b DONE** (`request_markdown`/`scope_request_markdown`를 `lib/request.ts`로 포팅 — 실제로는 FS 비의존 순수 빌더였음, 오라클 차등테스트 통과). |
+| **3** | **락 + 상태** — advisory lock과 상태 파일 갱신을 byte-stable하게 포팅. 위험 1·5번 해소. | `lib/lock.ts`, `lib/git.ts`(diff 해시 포함) | TODO |
+| **4** | **리뷰 코어 + 훅** — 리뷰 시작/종료/결정 파싱과 훅 디스패치. JSON 계약(위험 7)과 정규식(위험 4) 회귀 검증. | `lib/review.ts`, `lib/report.ts`, `lib/intent.ts`, `lib/cmux.ts`, `lib/hooks.ts` | TODO |
+| **5** | **CLI 명령 + ccr-hook.py 제거** — `cli.ts`(argparse 대체)와 `commands/*.ts` 완성, parity 전체 검증 후 `ccr-hook.py`(및 종국에 `ccr.sh`)를 제거하고 Bun 런타임을 진실 공급원으로 승격. | `cli.ts`, `commands/*.ts`, parity 리포트 | TODO |
+
+각 Phase는 직전 Phase의 골든/회귀 테스트가 통과해야 다음으로 진행한다. Phase 5 완료 전까지 `ccr.sh`는 절대 제거하지 않는다.
+
+---
+
+## 6. 이중 진실 공급원 주의사항 & 드리프트 가드
+
+전환기에는 **같은 페이로드가 두 곳에 존재**한다 — `ccr.sh`의 heredoc과 `templates/`의 파일. 두 사본이 어긋나면(drift) 설치 결과가 갈라진다.
+
+- **`scripts/check-templates-sync.ts`** 는 `templates/`의 44개 파일이 `ccr.sh`의 대응 heredoc 본문과 **byte-identical**한지 단언한다. `ccr.sh`의 `cat > "$BIN_ROOT/..." <<'EOF'` / `<<'PY'` / `<<'CCR_*_EOF'` 블록을 파싱해 추출본과 바이트 비교한다.
+- 이 검사는 **CI와 pre-commit**에서 실행되어야 한다. `package.json`의 `check:sync` 스크립트(`bun run scripts/check-templates-sync.ts`)가 진입점이다. 어느 한쪽만 수정되면 검사가 실패하여 드리프트를 차단한다.
+- **계약**: 전환기 동안 페이로드 변경은 항상 `ccr.sh`(진실 공급원)에 먼저 반영하고 `templates/`를 재추출하거나, 동시 수정 후 `check:sync`로 동기성을 보장한다. `templates/`만 단독 수정해서는 안 된다.
+- **종료 상태(end-state)**: Phase 5에서 Bun 런타임 parity가 검증되면 `ccr.sh`를 `templates/` + `src/install.ts` 조합으로 **대체**한다. 그 시점에 드리프트 가드는 단일 공급원 검사로 역할이 바뀌거나 제거되며, 이중 공급원 상태는 해소된다.
+
+---
+
+## 7. 현재 라운드 상태 (Status of THIS round)
+
+이번 라운드에서 완료된 작업:
+
+- **`templates/` 추출 완료** — `ccr.sh` heredoc에서 44개 파일(bin 27 + claude-commands 14 + config 3)을 추출했다. byte-identical 재구성이 검증되었다(검증 기준값: **195,891 bytes, 44 files**). `ccr.sh`는 변경 없이 그대로다.
+- **`templates/selftest-install.py` 추출** — `ccr.sh`의 설치 시점 selftest 블록(`python3 - <<'SELFTEST'`, @ccr.sh:4746)을 별도 파일로 추출했다.
+- **`src/install.ts` 작성** — `ccr.sh`의 설치 로직을 TypeScript로 포팅했다. 컴파일/타입체크 대상이며 **실행하지 않는다**(`~/.claude`, `~/.codex`, `~/.local/bin`, `~/.zshrc`, `~/.config` 비변형).
+- **골든 net + 드리프트 가드 추가** — `test/golden*` 픽스처와 `scripts/check-templates-sync.ts`(byte parity 단언)를 추가했다.
+- **툴체인** — **Bun 1.3.11** 사용 가능. `package.json`(`type=module`, `engines.bun>=1.0.0`, scripts: `install:ccr`/`test`/`check:sync`/`typecheck`)과 strict `tsconfig.json`이 준비되어 있다.
+
+미생성/후속(다음 라운드):
+
+- `src/lib/*`, `src/commands/*`, `src/cli.ts` 디렉터리는 아직 생성되지 않았다(Phase 2 이후).
+- `ccr-hook.py`의 Bun 포팅은 시작 전이며 Phase 5에서 parity 검증 후 제거 대상이다.
+
+> 비고: `ccr-hook.py`는 현재 추출본 기준 3754 라인이며, 인벤토리상 명목 수치는 3757 라인이다(추출/정규화에 따른 미세 차이). 위 byte parity 기준값(195,891)은 이번 라운드의 검증 산출물 수치를 그대로 기록한 것이다.
+
+### Phase 2a 산출물 (런타임 순수 함수 포팅)
+
+- **기반 2개** (`src/lib/pycompat.ts`, `src/lib/constants.ts`): Python 문자열/경로 의미(`splitlines`, `strip/lstrip/rstrip`, `utf8ByteLength`, `cpLength/cpSlice`, `cpCompare`, `splitWhitespace`, `posixParts/posixName`)와 정규식·상수를 단일 출처로 포팅. Python 오라클과 직접 검증.
+- **leaf 모듈 6개**: `text.ts`(sanitize, opposite, joinSections, truncateSections, truncateText, fencedMarkdownBlock, formatDuration), `diff.ts`(diffHasContent, countChangedLines, filesTouchedFromDiffText, safeRelPath, diffPathspecs), `decision.ts`(parseDecision, isSentinelMustFix, countMustFixInText), `intent.ts`(extractIntentFromMessage, renderIntentSection, isCcrHandoffPrompt), `tool.ts`(toolName, toolCommand, bashLooksMutating, shouldMarkDirtyForTool), `misc.ts`(defaultState, reviewerBlockResponse, doctorNextMessage, doctorActionItems).
+- **차등 테스트** `test/differential.test.ts`: 함수별 풍부한 엣지케이스 코퍼스를 **Python 프로브(오라클) ↔ TS** 로 deepEqual 비교(기대값을 오라클에서 런타임 취득 → 치팅 불가). 전체 스위트 **683 pass / 0 fail**.
+- 적대적 모듈 리뷰에서 발견된 분기 중 현실적·저비용 항목(코드포인트 정렬, `str.split()` 공백 집합)은 `pycompat`에 `cpCompare`/`splitWhitespace`를 추가해 **수정**, 오라클로 재검증함.
+
+### Phase 2b 산출물 (리뷰 요청 마크다운 빌더 포팅)
+
+- **`src/lib/request.ts`**: `request_markdown`(자동 라운드 요청)과 `scope_request_markdown`(수동 스코프 요청)을 포팅. 계획 초안은 이들을 "FS 의존"으로 분류했으나, 실제 소스를 보면 `diff_file`/`delta_file`/`scope_file` 등 `Path` 인자를 **f-string으로 문자열 보간만** 할 뿐 읽기/쓰기가 없는 **순수 빌더**다. 따라서 별도 FS 오라클 없이 기존 차등 하니스로 검증 가능했다(모델링 주의사항은 아래 D7 참조). 큰 리뷰어 지시문 블록은 `ccr-hook.py`에서 그대로 전사했다.
+- 기존 leaf 모듈을 재사용: `renderIntentSection`(intent.ts), `truncateText`/`fencedMarkdownBlock`(text.ts), `strip`(pycompat). 신규 보조: `pyGet`(dict.get 시맨틱), `pyStr`(None/True/False 포함 Python str() 보간), `pyTruthyObj`(빈 dict는 falsy인 Python `if d:` 시맨틱).
+- **차등 테스트**: `request_markdown` 24케이스 + `scope_request_markdown` 22케이스를 추가(부분 인자배열로 positional 기본값까지 점진 검증). 다국어/이모지/백틱 펜스 에스컬레이션/12000+ 코드포인트 절단/빈 dict 등 엣지를 포함. 전체 스위트 **699 pass / 0 fail**(차등 단독), 전체 **736 pass / 0 fail**.
+- 오라클이 잡아낸 분기 2건(`previous_review`/`worker_followup`가 빈 dict일 때 JS에서는 truthy라 섹션을 잘못 방출)은 **포팅 버그**였고 `pyTruthyObj`로 **수정**했다 — 수용된 분기가 아니라 정정된 결함이다.
+
+---
+
+## 8. 알려진 분기 레지스트리 (Known divergences — accepted)
+
+아래는 Python `re`/런타임과 JS 사이의 **의도적·수용된** 동작 차이다. 모두 **CCR의 실제 입력(리뷰 마크다운, git diff, bash 명령, hook JSON)에서는 발생하지 않는 비현실적·적대적 입력**에서만 나타나며, 차등 테스트의 현실 입력 공간(683 케이스)은 완전 일치한다. Phase 5 parity 검증 시 이 목록을 재확인한다.
+
+| # | 위치 | 분기 | 트리거(비현실적) | 결정 |
+|---|---|---|---|---|
+| D1 | `tool.ts` `toolName`/`toolCommand` | `tool`/`tool_input`이 present-but-non-dict면 Python은 `AttributeError`로 크래시, TS는 `""` 반환 | `{tool:null}`, `{tool:"x"}`, `{tool:{input:null}}` | TS의 방어적 동작 유지. hook 핸들러에서 크래시 복제는 부적절하며 실제 페이로드는 항상 객체. 코드 주석에 명시. |
+| D2 | `constants.ts` 정규식의 `\s` | Python `re`의 `\s`는 U+001C–U+001F·U+0085를 포함, JS는 미포함(대신 U+FEFF 포함) | 명령/리뷰 텍스트에 C0 제어문자·NEL·BOM이 키워드 인접 | 수용. `\s` 전부를 명시 클래스로 치환하면 가독성·신규버그 위험. DECISION_RE/INTENT_*/MUTATING_BASH_PATTERNS에 해당. |
+| D3 | `constants.ts` 정규식의 `\b` | Python `\b`는 유니코드 단어경계, JS는 ASCII 전용 | 키워드 직후 악센트 문자(`git addé`, `requesté`) | 수용. JS는 유니코드 `\b` 미지원(우회는 lookbehind 곡예). 실제 명령/헤더엔 미발생. |
+| D4 | `tool.ts` 비문자열 강제변환 | Python `str(True)`→`"True"`, JS `String(true)`→`"true"` (None/null 동일) | `tool_name`/`command`가 bool/number | 수용. 실제 페이로드는 문자열. D1과 동일 근거. |
+| D5 | `misc.ts` `doctorActionItems` | `row.get(k,"")`는 키 부재 시만 `""`; 값이 명시적 `null`이면 Python은 `None`, TS는 `?? ""`로 `""` | row 필드값이 명시적 `null` | 수용. row는 내부 코드가 항상 문자열로 채움. |
+| D6 | `pycompat.ts` `posixParts` | `PurePosixPath('//a')`는 POSIX 특례로 root가 `'//'`, 포팅은 `'/'` | 선행 `//` 경로 | 무해. `safe_rel_path`의 `startsWith('/')` 가드가 선행 슬래시를 먼저 거부. |
+| D7 | `request.ts` `Path` 인자(`diff_file`/`delta_file`/`scope_file`) | 런타임은 `Path` 객체를 넘기고 f-string이 `str(Path)`로 정규화(`Path('a//b')`→`'a/b'`)하지만, 차등 테스트는 동일 문자열을 양쪽에 직접 전달하므로 정규화가 발생하지 않음 | 비정규 경로 문자열(`a//b`, 후행 `/`)을 인자로 전달 | 수용(테스트 모델링 한정). 빌더는 보간만 하므로 양쪽이 동일 입력을 받으면 출력도 동일. 실제 호출자는 항상 정규화된 `Path`를 넘기며, 경로 정규화는 `safe_rel_path`/`posixParts`(D6)에서 이미 별도 검증됨. |

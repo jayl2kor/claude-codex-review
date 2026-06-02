@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cat <<'HELP'
+CCR quick help
+
+Install:
+  bash ccr.sh
+  ccr-help
+  ccr-selftest
+
+Start a Claude/Codex pair:
+  1. Open the target project in cmux.
+  2. Run cmux-setup-claude in the Claude surface.
+  3. Run cmux-setup-codex in the Codex surface.
+  4. From the target git repository, run ccr-enable.
+  5. Run ccr-ready.
+  6. Run ccr-preview before expecting the first automatic review.
+
+Daily commands:
+  ccr-status                 Show current CCR state.
+  ccr-request                Send a scoped manual review.
+  ccr-history                List completed review rounds.
+  ccr-events                 Show recent runtime events.
+  ccr-show                   Show latest round paths or review body.
+  ccr-preview                Explain whether current diff is reviewable.
+  ccr-prune                  Dry-run cleanup for old CCR artifacts.
+  ccr-config                 Show effective CCR settings.
+  ccr-check                  Run consolidated diagnostics.
+  ccr-report                 Generate or print a session report.
+  ccr-ready                  Strict readiness gate for auto review.
+  ccr-skip-next              Skip the next automatic review.
+  ccr-cancel                 Cancel a stale active request.
+  ccr-support                Create a diagnostic support bundle.
+  ccr-selftest               Run installed runtime smoke tests.
+  ccr-reset                  Wipe local .cmux/ccr state.
+  ccr-disable                Disable CCR for this cmux workspace.
+  ccr-uninstall              Remove installed CCR files and hooks.
+
+Diagnostics:
+  ccr-ready                  Strict yes/no setup gate for auto review.
+  ccr-check                  Broad health summary with next actions.
+  ccr-preview                Explain why the current diff will/won't review.
+  ccr-doctor                 Human-readable checks and next actions.
+  ccr-doctor --json          Machine-readable checks and actions.
+
+More detail:
+  README.md                  Main guide in the CCR repository.
+  docs/start-here.md         Role-based docs and command routing.
+  docs/quickstart.md         Short first-run path.
+  docs/examples.md           Task-oriented command recipes.
+  docs/adoption-checklist.md Repository-owner rollout checklist.
+  docs/faq.md                Common setup and routing questions.
+  docs/commands.md           Command reference by task.
+  docs/troubleshooting.md    Symptom-based recovery.
+  docs/validation.md         Checks before sharing or rolling out changes.
+  docs/glossary.md           Runtime terms used in status and reports.
+  docs/templates.md          Copy-paste rollout and support templates.
+  docs/upgrade.md            Reinstall, validation, rollback, and purge guide.
+HELP

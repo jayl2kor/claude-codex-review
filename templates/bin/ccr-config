@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+case "${1:-}" in -h|--help)
+  cat <<USAGE
+Usage: ccr-config [--json]
+Show effective CCR environment variables, paths, generated command names, and diff exclusions.
+USAGE
+  exit 0
+;; esac
+exec python3 "$HOME/.local/bin/ccr-hook.py" --command config "$@"

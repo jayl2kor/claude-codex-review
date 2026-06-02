@@ -1,0 +1,248 @@
+{
+  "version": 1,
+  "source": "templates/bin/ccr-hook.py",
+  "note": "Golden snapshot of CCR pure-function behavior. Regenerate with `python3 test/golden-probe.py --emit-golden`.",
+  "cases": [
+    {
+      "fn": "parse_decision",
+      "args": [
+        "REVIEW_DECISION: PASS\nrest"
+      ],
+      "expected": "PASS",
+      "actual": "PASS"
+    },
+    {
+      "fn": "parse_decision",
+      "args": [
+        "preamble\nREVIEW_DECISION: NEEDS_CHANGES"
+      ],
+      "expected": "NEEDS_CHANGES",
+      "actual": "NEEDS_CHANGES"
+    },
+    {
+      "fn": "parse_decision",
+      "args": [
+        "REVIEW_DECISION: pass"
+      ],
+      "expected": "PASS",
+      "actual": "PASS"
+    },
+    {
+      "fn": "parse_decision",
+      "args": [
+        "REVIEW_DECISION:   NEEDS_HUMAN  "
+      ],
+      "expected": "NEEDS_HUMAN",
+      "actual": "NEEDS_HUMAN"
+    },
+    {
+      "fn": "parse_decision",
+      "args": [
+        "no decision here"
+      ],
+      "expected": "INVALID",
+      "actual": "INVALID"
+    },
+    {
+      "fn": "parse_decision",
+      "args": [
+        "Example format:\n```\nREVIEW_DECISION: PASS\n```\nActual verdict:\nREVIEW_DECISION: NEEDS_CHANGES\n"
+      ],
+      "expected": "NEEDS_CHANGES",
+      "actual": "NEEDS_CHANGES"
+    },
+    {
+      "fn": "parse_decision",
+      "args": [
+        "> REVIEW_DECISION: PASS\nREVIEW_DECISION: NEEDS_HUMAN\n"
+      ],
+      "expected": "NEEDS_HUMAN",
+      "actual": "NEEDS_HUMAN"
+    },
+    {
+      "fn": "count_changed_lines",
+      "args": [
+        "--- a/x\n+++ b/x\n@@\n+hi\n-bye\n other"
+      ],
+      "expected": 2,
+      "actual": 2
+    },
+    {
+      "fn": "_count_must_fix_in_text",
+      "args": [
+        "## Must Fix\n- None.\n\n## Looks Good\n- ok\n"
+      ],
+      "expected": 0,
+      "actual": 0
+    },
+    {
+      "fn": "_count_must_fix_in_text",
+      "args": [
+        "## Must Fix\n- N/A\n- -\n- (none)\n- 없음\n"
+      ],
+      "expected": 0,
+      "actual": 0
+    },
+    {
+      "fn": "_count_must_fix_in_text",
+      "args": [
+        "## Must Fix\n- a real one\n- another\n"
+      ],
+      "expected": 2,
+      "actual": 2
+    },
+    {
+      "fn": "_count_must_fix_in_text",
+      "args": [
+        "## Must Fix\n- None.\n- a real one\n"
+      ],
+      "expected": 1,
+      "actual": 1
+    },
+    {
+      "fn": "is_ccr_handoff_prompt",
+      "args": [
+        "[ccr-handoff]\n..."
+      ],
+      "expected": true,
+      "actual": true
+    },
+    {
+      "fn": "is_ccr_handoff_prompt",
+      "args": [
+        "[ccr-handoff]\n자동 리뷰 요청입니다"
+      ],
+      "expected": true,
+      "actual": true
+    },
+    {
+      "fn": "is_ccr_handoff_prompt",
+      "args": [
+        "please [ccr-handoff] later"
+      ],
+      "expected": false,
+      "actual": false
+    },
+    {
+      "fn": "is_ccr_handoff_prompt",
+      "args": [
+        "normal"
+      ],
+      "expected": false,
+      "actual": false
+    },
+    {
+      "fn": "is_ccr_handoff_prompt",
+      "args": [
+        ""
+      ],
+      "expected": false,
+      "actual": false
+    },
+    {
+      "fn": "should_mark_dirty_for_tool",
+      "args": [
+        {
+          "tool_name": "apply_patch"
+        }
+      ],
+      "expected": true,
+      "actual": true
+    },
+    {
+      "fn": "should_mark_dirty_for_tool",
+      "args": [
+        {
+          "tool_name": "Edit"
+        }
+      ],
+      "expected": true,
+      "actual": true
+    },
+    {
+      "fn": "should_mark_dirty_for_tool",
+      "args": [
+        {
+          "tool_name": "Write"
+        }
+      ],
+      "expected": true,
+      "actual": true
+    },
+    {
+      "fn": "should_mark_dirty_for_tool",
+      "args": [
+        {
+          "tool_name": "MultiEdit"
+        }
+      ],
+      "expected": true,
+      "actual": true
+    },
+    {
+      "fn": "should_mark_dirty_for_tool",
+      "args": [
+        {
+          "tool_name": "Bash",
+          "tool_input": {
+            "command": "pytest"
+          }
+        }
+      ],
+      "expected": false,
+      "actual": false
+    },
+    {
+      "fn": "should_mark_dirty_for_tool",
+      "args": [
+        {
+          "tool_name": "Bash",
+          "tool_input": {
+            "command": "ccr-reset"
+          }
+        }
+      ],
+      "expected": false,
+      "actual": false
+    },
+    {
+      "fn": "should_mark_dirty_for_tool",
+      "args": [
+        {
+          "tool_name": "Bash",
+          "tool_input": {
+            "command": "ccr-status"
+          }
+        }
+      ],
+      "expected": false,
+      "actual": false
+    },
+    {
+      "fn": "should_mark_dirty_for_tool",
+      "args": [
+        {
+          "tool_name": "Bash",
+          "tool_input": {
+            "command": "printf x > app.py"
+          }
+        }
+      ],
+      "expected": true,
+      "actual": true
+    },
+    {
+      "fn": "should_mark_dirty_for_tool",
+      "args": [
+        {
+          "tool_name": "Bash",
+          "tool_input": {
+            "command": "rm -rf build"
+          }
+        }
+      ],
+      "expected": true,
+      "actual": true
+    }
+  ]
+}

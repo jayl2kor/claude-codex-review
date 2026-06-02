@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+case "${1:-}" in -h|--help)
+  cat <<USAGE
+Usage: ccr-support [--session ID] [--include-diffs] [--print]
+Create .cmux/ccr/support/ccr-support-*.zip with doctor output and session metadata.
+By default, request/review/diff payloads are excluded. Use --include-diffs only when sharing code payloads is acceptable.
+USAGE
+  exit 0
+;; esac
+exec python3 "$HOME/.local/bin/ccr-hook.py" --command support "$@"

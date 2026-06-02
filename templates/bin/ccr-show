@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+case "${1:-}" in -h|--help)
+  cat <<USAGE
+Usage: ccr-show [--session ID] [--round N] [--review]
+Show paths for the latest (or specified) review round. --review prints review.md body.
+USAGE
+  exit 0
+;; esac
+exec python3 "$HOME/.local/bin/ccr-hook.py" --command show "$@"

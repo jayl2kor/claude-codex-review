@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+case "${1:-}" in -h|--help)
+  cat <<USAGE
+Usage: ccr-selftest [--json]
+Run installed CCR runtime smoke tests without reinstalling.
+Checks parser behavior, dirty filtering, prompt reset safety, diff helpers, and diagnostic JSON paths.
+USAGE
+  exit 0
+;; esac
+exec python3 "$HOME/.local/bin/ccr-hook.py" --command selftest "$@"

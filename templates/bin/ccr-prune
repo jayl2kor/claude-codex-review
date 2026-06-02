@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+case "${1:-}" in -h|--help)
+  cat <<USAGE
+Usage: ccr-prune [--keep N] [--days N] [--apply] [--json]
+Dry-run cleanup for old .cmux/ccr sessions and support bundles.
+Defaults: --keep 20 --days 30. Add --apply to actually remove candidates.
+USAGE
+  exit 0
+;; esac
+exec python3 "$HOME/.local/bin/ccr-hook.py" --command prune "$@"

@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+case "${1:-}" in -h|--help)
+  cat <<USAGE
+Usage: ccr-ready [--json]
+Exit 0 only when automatic CCR review routing is ready in the current cwd.
+Use this after setup or in scripts that need a strict ready/not-ready gate.
+USAGE
+  exit 0
+;; esac
+exec python3 "$HOME/.local/bin/ccr-hook.py" --command ready "$@"

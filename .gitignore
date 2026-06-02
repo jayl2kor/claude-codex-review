@@ -1,1 +1,7 @@
 .omc/
+node_modules/
+*.ccr-backup
+/tmp/
+__pycache__/
+*.pyc
+.open-research/

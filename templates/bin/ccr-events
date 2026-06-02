@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+case "${1:-}" in -h|--help)
+  cat <<USAGE
+Usage: ccr-events [--limit N] [--json]
+Show recent .cmux/ccr/events.jsonl runtime events. Default limit: 50.
+USAGE
+  exit 0
+;; esac
+exec python3 "$HOME/.local/bin/ccr-hook.py" --command events "$@"

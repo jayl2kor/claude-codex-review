@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -euo pipefail
+case "${1:-}" in -h|--help)
+  cat <<USAGE
+Usage: ccr-request [--reviewer auto|claude|codex] [--type TYPE] [--title T]
+                   [--file PATH ...] [--dir PATH ...] [--question Q ...]
+                   [--note N ...] [--use-diff|--no-diff]
+TYPE: code_review | architecture_review | design_review | test_plan_review |
+      security_review | general_review
+Send a scoped review request to the opposite agent.
+USAGE
+  exit 0
+;; esac
+exec python3 "$HOME/.local/bin/ccr-hook.py" --command request "$@"

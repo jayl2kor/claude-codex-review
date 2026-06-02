@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+case "${1:-}" in -h|--help)
+  cat <<USAGE
+Usage: ccr-uninstall [--apply] [--purge]
+Dry-run by default. --apply removes installed binaries, slash commands, and hook entries.
+--purge also deletes ~/.config/claude-codex-review and ~/.local/state/claude-codex-review.
+USAGE
+  exit 0
+;; esac
+exec python3 "$HOME/.local/bin/ccr-hook.py" --command uninstall "$@"
