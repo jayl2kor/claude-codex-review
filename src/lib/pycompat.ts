@@ -215,6 +215,18 @@ export function cpSlice(s: string, start: number, end?: number): string {
   return Array.from(s).slice(start, end).join("");
 }
 
+/** Python `str.ljust(width)`: pad with spaces on the RIGHT to >= width codepoints. */
+export function ljust(s: string, width: number): string {
+  const pad = width - cpLength(s);
+  return pad > 0 ? s + " ".repeat(pad) : s;
+}
+
+/** Python `str.rjust(width)`: pad with spaces on the LEFT to >= width codepoints. */
+export function rjust(s: string, width: number): string {
+  const pad = width - cpLength(s);
+  return pad > 0 ? " ".repeat(pad) + s : s;
+}
+
 /**
  * Compare two strings the way Python's `sorted()`/`<` does: lexicographically
  * by Unicode codepoint. JS's default `Array.sort()` compares by UTF-16 code
