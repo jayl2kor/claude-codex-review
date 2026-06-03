@@ -381,4 +381,13 @@
 - [x] Oracle test `test/phase4b2b.test.ts`: end-to-end (UserPromptSubmit→dirty→Stop[start_review]→reviewer Stop[finish_review]) byte-parity over round files/review/decision/ledger/context/report/status/events + state & active_request key order; handle_pre_tool 5 cases; handle_user_prompt_submit reset/handoff; handle_hook safe gate paths (ENABLED_FILE untouched); ensure_info_exclude idempotency. Fake cmux on PATH + isolated workspace under CONFIG_ROOT + shared temp git repo.
 - [x] JSON contract (risk 7): handleHook returns the result dict with Python key order; the byte-exact hook stdout serialization is deferred to the Phase 5 CLI. Regex (risk 4): parse_decision / mutating-tool classification reused from already-validated decision.ts/tool.ts.
 - [x] Verify: `typecheck`, `check:sync` (44 files), full suite (874 pass / 1 skip / 0 fail).
-- [ ] **Phase 4 complete.** Remaining: Phase 5 — TS CLI (`cli.ts`/`commands/*.ts`) + exact hook-stdout serialization, parity verification, then remove `templates/bin/ccr-hook.py` and `ccr.sh`.
+- [x] **Phase 4 complete.**
+
+## migration-phase-5a-hook-entrypoint
+
+- [x] `io.ts`: `pyJsonCompact` (insertion-order/unsorted sibling of pyJsonCompactSorted, ", "/": ", ensure_ascii=False raw) + `readStdinJson` (parse fd 0; {} on blank/parse-error/non-object).
+- [x] `src/cli.ts`: hook entrypoint mirroring `main()` — parse `--agent`/`--event` (event falls back to stdin `hook_event_name`), `handleHook`, print `pyJsonCompact(result)+"\n"` ONLY when result !== null, always exit 0. `--command` throws until 5b–5d.
+- [x] Oracle test `test/phase5a.test.ts`: spawn BOTH `ccr-hook.py` and `bun src/cli.ts` under identical temp HOME/CCR_ROOT/CMUX env + fake cmux; assert stdout-byte + exit-code parity. Gate paths (codex/Stop `{}`, claude/Stop empty, missing-agent, event-from-stdin) + enabled PreToolUse block (codex nested deny shape, claude flat block shape, non-mutating no-op). Confirms risk 7 + the subprocess+HOME parity strategy.
+- [x] Verify: `typecheck`, `check:sync` (44 files), full suite (882 pass / 1 skip / 0 fail).
+- [ ] Phase 5b (next): read-only commands `status`/`history`/`events`/`show`/`report`/`preview`/`config` → `src/commands/*.ts` + oracle stdout parity via the subprocess strategy.
+- [ ] 5c state-mutating · 5d diagnostic · 5e `args.ts`+`bun build` bundle · 5f ccr.sh bun rewire + remove `ccr-hook.py` (keep ccr.sh).
