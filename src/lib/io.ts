@@ -207,3 +207,59 @@ export function getOrNull(obj: Record<string, unknown> | null | undefined, key: 
   const v = obj[key];
   return v === undefined ? null : v;
 }
+
+/**
+ * Reproduce Python `json.dumps(data, ensure_ascii=False)` (NO sort_keys): the
+ * UNSORTED sibling of pyJsonCompactSorted. Object keys are emitted in INSERTION
+ * order (matching CPython dict order / argument order), with Python's default
+ * separators ", " (items) and ": " (k/v) and non-ASCII left raw. This is the
+ * byte-exact form `main()` uses for the hook result stdout (risk 7):
+ *   print(json.dumps(result, ensure_ascii=False))  ->  pyJsonCompact(result) + "\n"
+ */
+export function pyJsonCompact(value: unknown): string {
+  if (Array.isArray(value)) {
+    return "[" + value.map(pyJsonCompact).join(", ") + "]";
+  }
+  if (value !== null && typeof value === "object") {
+    const obj = value as Record<string, unknown>;
+    return (
+      "{" +
+      Object.keys(obj)
+        .map((k) => JSON.stringify(k) + ": " + pyJsonCompact(obj[k]))
+        .join(", ") +
+      "}"
+    );
+  }
+  if (value === undefined) {
+    // Python has no `undefined`; callers normalize absent dict.get() to null.
+    return "null";
+  }
+  return JSON.stringify(value);
+}
+
+/**
+ * Python `read_stdin_json` (136-144): read ALL of stdin; return {} for blank
+ * input, a parsed top-level JSON object, or {} on parse error / non-object.
+ * Reads fd 0 synchronously (mirrors sys.stdin.read()); an unreadable stdin
+ * (e.g. no pipe) is treated as blank input -> {}.
+ */
+export function readStdinJson(): Record<string, unknown> {
+  let raw: string;
+  try {
+    raw = readFileSync(0, "utf-8");
+  } catch {
+    return {};
+  }
+  if (!strip(raw)) {
+    return {};
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return {};
+  }
+  return parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)
+    ? (parsed as Record<string, unknown>)
+    : {};
+}
