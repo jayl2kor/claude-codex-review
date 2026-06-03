@@ -367,4 +367,18 @@
 - [x] Add `ENABLED_FILE` + `workspaceConfigDir` to `paths.ts`.
 - [x] Tests (`test/phase4b.test.ts` + probe ops): role/surface oracle parity via an isolated unique workspace under CONFIG_ROOT; workspace_enabled safe false-paths; sendToSurface empty-surface guard. (Subprocess success/exit branches not unit-tested — Bun spawnSync ignores runtime PATH overrides so a fake cmux can't be substituted; faithful port verified by review.)
 - [x] Verify: `typecheck`, `check:sync`, full suite (853 pass / 0 fail).
-- [ ] Phase 4b-2 (next): `generate_session_report` (report.ts), `start_review`/`finish_review` (review.ts orchestration), hook dispatch `handle_hook`/`handle_pre_tool`/`handle_user_prompt_submit` + `ensure_info_exclude` (hooks.ts), with JSON-contract (risk 7) + regex (risk 4) regression.
+## migration-phase-4b2a-report-reaper
+
+- [x] Port `generate_session_report` + `_try_generate_report` to `report.ts` (reuses latestSessionId/roundMustFixCount/roundFilesTouched/countChangedLines/formatDuration/fencedMarkdownBlock).
+- [x] Port `consume_skip_marker`, `_active_request_age_seconds`, `reap_stale_active` to `review.ts`; add `skipMarkerPath` to `paths.ts`.
+- [x] `cmux.ts`: resolve the `cmux` binary against the live PATH (`resolveCmuxBin`) so a fake cmux can be substituted in tests (Bun spawnSync's bare-command lookup doesn't honor a runtime PATH override; explicit lookup matches Python's execvp).
+- [x] Oracle test `test/phase4b2.test.ts` (probe ops generate-report/reap-stale/consume-skip): report.md + status.json + events.jsonl byte-parity, reaper (age/mismatch/no-op + status/events), skip marker. Full suite 861 pass / 0 fail.
+## migration-phase-4b2b-orchestration-dispatch
+
+- [x] Port `start_review` + `finish_review` to `review.ts` (mutate state in place; reuse collectDiff/computeDeltaPatch/requestMarkdown/session+report helpers/cmux/lock; match `{n:04d}` paths, exact handoff message strings, and active_request/last_completed key order).
+- [x] New `hooks.ts`: `handlePreTool`, `handleUserPromptSubmit`, `handleHook` (lockedState callback captures the result via a closure var, returning the Python-key-order result dict), `ensureInfoExclude`.
+- [x] Probe ops (`test/phase3-probe.py`): start-review / finish-review / handle-pre-tool / handle-user-prompt / handle-hook / ensure-info-exclude.
+- [x] Oracle test `test/phase4b2b.test.ts`: end-to-end (UserPromptSubmit→dirty→Stop[start_review]→reviewer Stop[finish_review]) byte-parity over round files/review/decision/ledger/context/report/status/events + state & active_request key order; handle_pre_tool 5 cases; handle_user_prompt_submit reset/handoff; handle_hook safe gate paths (ENABLED_FILE untouched); ensure_info_exclude idempotency. Fake cmux on PATH + isolated workspace under CONFIG_ROOT + shared temp git repo.
+- [x] JSON contract (risk 7): handleHook returns the result dict with Python key order; the byte-exact hook stdout serialization is deferred to the Phase 5 CLI. Regex (risk 4): parse_decision / mutating-tool classification reused from already-validated decision.ts/tool.ts.
+- [x] Verify: `typecheck`, `check:sync` (44 files), full suite (874 pass / 1 skip / 0 fail).
+- [ ] **Phase 4 complete.** Remaining: Phase 5 — TS CLI (`cli.ts`/`commands/*.ts`) + exact hook-stdout serialization, parity verification, then remove `templates/bin/ccr-hook.py` and `ccr.sh`.
