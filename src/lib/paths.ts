@@ -65,3 +65,8 @@ export function sessionContextPath(root: string, sessionId: string): string {
 export function sessionLedgerPath(root: string, sessionId: string): string {
   return join(sessionDir(root, sessionId), "ledger.md");
 }
+
+/** Python `skip_marker_path` (1509-1510): root/skip-next.json. */
+export function skipMarkerPath(root: string): string {
+  return join(root, "skip-next.json");
+}

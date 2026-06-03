@@ -16,8 +16,8 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readFileSync, accessSync, constants as fsConstants } from "node:fs";
+import { join, delimiter } from "node:path";
 
 import { readText } from "./io";
 import { splitlines } from "./pycompat";
@@ -25,12 +25,37 @@ import { surfaceId, workspaceId, workspaceConfigDir, ENABLED_FILE } from "./path
 import { CCR_HANDOFF_SENTINEL } from "./constants";
 
 /**
+ * Resolve the `cmux` binary by scanning the CURRENT PATH for an executable.
+ * Bun's spawnSync resolves a bare command name against the PATH captured at
+ * process start, ignoring a runtime-mutated process.env.PATH; doing the lookup
+ * explicitly honors the live PATH (matching Python's subprocess.run, which
+ * execvp's against the current env) so a fake `cmux` can be substituted in
+ * tests. Falls back to "cmux" so spawnSync still ENOENTs if it is truly absent.
+ */
+function resolveCmuxBin(): string {
+  const pathEnv = process.env.PATH ?? "";
+  for (const dir of pathEnv.split(delimiter)) {
+    if (!dir) {
+      continue;
+    }
+    const candidate = join(dir, "cmux");
+    try {
+      accessSync(candidate, fsConstants.X_OK);
+      return candidate;
+    } catch {
+      /* not executable here */
+    }
+  }
+  return "cmux";
+}
+
+/**
  * Python `cmux` (463-467): run `cmux <args...>`, discard output, never raise
  * (a missing `cmux` binary is ignored). spawnSync reports ENOENT via proc.error
  * rather than throwing, so this naturally swallows it.
  */
 export function cmux(...args: string[]): void {
-  spawnSync("cmux", args, { stdio: ["ignore", "ignore", "ignore"] });
+  spawnSync(resolveCmuxBin(), args, { stdio: ["ignore", "ignore", "ignore"] });
 }
 
 /** Python `cmux_log` (470-471). */
@@ -62,13 +87,14 @@ export function sendToSurface(surface: string, message: string): boolean {
     return false;
   }
   const wrapped = `${CCR_HANDOFF_SENTINEL}\n${message}`;
-  const send = spawnSync("cmux", ["send", "--surface", surface, wrapped], {
+  const bin = resolveCmuxBin();
+  const send = spawnSync(bin, ["send", "--surface", surface, wrapped], {
     stdio: ["ignore", "ignore", "ignore"],
   });
   if (send.error || send.status !== 0) {
     return false;
   }
-  const enter = spawnSync("cmux", ["send-key", "--surface", surface, "enter"], {
+  const enter = spawnSync(bin, ["send-key", "--surface", surface, "enter"], {
     stdio: ["ignore", "ignore", "ignore"],
   });
   if (enter.error || enter.status !== 0) {
