@@ -1,5 +1,6 @@
 .omc/
 node_modules/
+dist/
 *.ccr-backup
 /tmp/
 __pycache__/

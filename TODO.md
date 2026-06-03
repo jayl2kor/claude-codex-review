@@ -401,4 +401,9 @@
 - [x] Oracle test `test/phase5c.test.ts` (11 cases): separate per-runtime HOME + CCR_ROOT; stdout + exit + artifact parity (state.json/status.json/ENABLED_FILE/skip-next.json/report.md). Normalizes root/home/cwd/timestamps/`manual-<epoch>-` id/prune `age_days`.
 - [x] Fix the full-suite flake: `phase4b2b.test.ts` compared report.md's now()-derived `| duration |` line (legitimately ±1s between the two independent runs) — normalized `duration` in phase4b2b + phase5b. Root-caused via a loop-until-fail capture; not a port bug.
 - [x] Verify: `typecheck`, `check:sync` (44 files), full suite 3× (911 pass / 1 skip / 0 fail each).
-- [ ] 5d diagnostic (doctor/check/support/selftest/uninstall) · 5e `bun build` single-bundle `ccr-cli.js` · 5f ccr.sh bun rewire + remove `ccr-hook.py` (keep ccr.sh).
+## migration-phase-5e-bundle
+
+- [x] `scripts/build-cli.ts`: `Bun.build` → single dependency-inlined `dist/ccr-cli.js` (deterministic, banner-stamped). `build:cli` package script; `dist/` gitignored.
+- [x] Fidelity test `test/phase5e.test.ts` (6 cases): the bundle is behavior-identical to `bun src/cli.ts` (config/status/history/hook-gate/enabled-PreToolUse-deny; same nonzero exit on a not-yet-ported command). Full suite 917 pass / 1 skip / 0 fail; check:sync green.
+- [ ] **5d (deferred at user request):** diagnostic commands doctor/check/support/selftest/uninstall → `src/commands/*.ts`.
+- [ ] **5f (BLOCKED on 5d):** rewire ccr.sh bins python3→bun, place bundle in templates/bin + check:sync allowlist, de-python install.ts, remove `templates/bin/ccr-hook.py`. Cannot start until 5d lands (bins must dispatch all 20 commands) AND the oracle tests are repointed off ccr-hook.py (every phase test spawns/loads it).
