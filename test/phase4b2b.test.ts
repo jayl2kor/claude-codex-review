@@ -131,7 +131,13 @@ function read(p: string): string {
   return readFileSync(p, "utf-8");
 }
 function norm(s: string, root: string): string {
-  return s.split(root).join("<ROOT>").replace(/\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ/g, "<TS>");
+  return s
+    .split(root).join("<ROOT>")
+    .replace(/\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ/g, "<TS>")
+    // report.md duration = now() - started_at; the py probe and the TS calls
+    // sample now() at slightly different instants, so this can legitimately
+    // differ by <=1s between the two independent runs. Normalize it.
+    .replace(/\| duration \| [^|]*\|/g, "| duration | <DUR> |");
 }
 
 // A SHARED temp git repo with one committed + one unstaged change, so collect_diff
