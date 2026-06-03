@@ -389,5 +389,16 @@
 - [x] `src/cli.ts`: hook entrypoint mirroring `main()` — parse `--agent`/`--event` (event falls back to stdin `hook_event_name`), `handleHook`, print `pyJsonCompact(result)+"\n"` ONLY when result !== null, always exit 0. `--command` throws until 5b–5d.
 - [x] Oracle test `test/phase5a.test.ts`: spawn BOTH `ccr-hook.py` and `bun src/cli.ts` under identical temp HOME/CCR_ROOT/CMUX env + fake cmux; assert stdout-byte + exit-code parity. Gate paths (codex/Stop `{}`, claude/Stop empty, missing-agent, event-from-stdin) + enabled PreToolUse block (codex nested deny shape, claude flat block shape, non-mutating no-op). Confirms risk 7 + the subprocess+HOME parity strategy.
 - [x] Verify: `typecheck`, `check:sync` (44 files), full suite (882 pass / 1 skip / 0 fail).
-- [ ] Phase 5b (next): read-only commands `status`/`history`/`events`/`show`/`report`/`preview`/`config` → `src/commands/*.ts` + oracle stdout parity via the subprocess strategy.
-- [ ] 5c state-mutating · 5d diagnostic · 5e `args.ts`+`bun build` bundle · 5f ccr.sh bun rewire + remove `ccr-hook.py` (keep ccr.sh).
+## migration-phase-5b-readonly-commands
+
+- [x] `src/lib/args.ts`: argparse replacement (parseArgs → CcrArgs; all main() flags; choices/append/int/store_true/store_false; ArgError → exit 2). `pycompat` `ljust`/`rjust`.
+- [x] `src/commands/{shared,status,history,events,show,report,preview,config}.ts`; wired into `cli.ts` dispatch.
+- [x] Oracle test `test/phase5b.test.ts` (18 cases): `ccr-hook.py --command X` vs `bun src/cli.ts --command X` stdout + exit parity — text + json forms, error paths, stale-active hint, report generation (separate per-runtime roots).
+
+## migration-phase-5c-mutating-commands
+
+- [x] `src/commands/{enable,disable,reset,cancel,skipNext,prune,request}.ts`; wired into `cli.ts`.
+- [x] Oracle test `test/phase5c.test.ts` (11 cases): separate per-runtime HOME + CCR_ROOT; stdout + exit + artifact parity (state.json/status.json/ENABLED_FILE/skip-next.json/report.md). Normalizes root/home/cwd/timestamps/`manual-<epoch>-` id/prune `age_days`.
+- [x] Fix the full-suite flake: `phase4b2b.test.ts` compared report.md's now()-derived `| duration |` line (legitimately ±1s between the two independent runs) — normalized `duration` in phase4b2b + phase5b. Root-caused via a loop-until-fail capture; not a port bug.
+- [x] Verify: `typecheck`, `check:sync` (44 files), full suite 3× (911 pass / 1 skip / 0 fail each).
+- [ ] 5d diagnostic (doctor/check/support/selftest/uninstall) · 5e `bun build` single-bundle `ccr-cli.js` · 5f ccr.sh bun rewire + remove `ccr-hook.py` (keep ccr.sh).
