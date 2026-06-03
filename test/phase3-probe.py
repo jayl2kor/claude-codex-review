@@ -177,6 +177,66 @@ def main(argv: list[str]) -> int:
         sys.stdout.write(json.dumps({"value": bool(mod.workspace_enabled())}) + "\n")
         return 0
 
+    # ---- Phase 4b-2a: report generator + reaper + skip ----
+
+    if op == "generate-report":
+        root, sid, outcome = Path(rest[0]), rest[1], rest[2]
+        trigger = rest[3] if len(rest) > 3 else "auto"
+        p = mod.generate_session_report(root, sid, outcome, trigger=trigger)
+        sys.stdout.write(json.dumps({"value": str(p) if p is not None else None}, ensure_ascii=False) + "\n")
+        return 0
+
+    if op == "reap-stale":
+        root, state, event = Path(rest[0]), json.loads(rest[1]), rest[2]
+        input_data, role = json.loads(rest[3]), rest[4]
+        cleared = mod.reap_stale_active(root, state, event, input_data, role)
+        sys.stdout.write(json.dumps({"cleared": bool(cleared), "state": state}, ensure_ascii=False) + "\n")
+        return 0
+
+    if op == "consume-skip":
+        result = mod.consume_skip_marker(Path(rest[0]))
+        sys.stdout.write(json.dumps(result, ensure_ascii=False) + "\n")
+        return 0
+
+    # ---- Phase 4b-2b: review orchestration + hook dispatch ----
+
+    if op == "start-review":
+        root, state, input_data, role = Path(rest[0]), json.loads(rest[1]), json.loads(rest[2]), rest[3]
+        mod.start_review(root, state, input_data, role)
+        sys.stdout.write(json.dumps({"state": state}, ensure_ascii=False) + "\n")
+        return 0
+
+    if op == "finish-review":
+        root, state, input_data, role = Path(rest[0]), json.loads(rest[1]), json.loads(rest[2]), rest[3]
+        finished = mod.finish_review(root, state, input_data, role)
+        sys.stdout.write(json.dumps({"finished": bool(finished), "state": state}, ensure_ascii=False) + "\n")
+        return 0
+
+    if op == "handle-pre-tool":
+        root, state, input_data = Path(rest[0]), json.loads(rest[1]), json.loads(rest[2])
+        agent, role = rest[3], rest[4]
+        result = mod.handle_pre_tool(root, state, input_data, agent, role)
+        sys.stdout.write(json.dumps({"result": result, "state": state}, ensure_ascii=False) + "\n")
+        return 0
+
+    if op == "handle-user-prompt":
+        root, state, input_data = Path(rest[0]), json.loads(rest[1]), json.loads(rest[2])
+        agent, role = rest[3], rest[4]
+        mod.handle_user_prompt_submit(root, state, input_data, agent, role)
+        sys.stdout.write(json.dumps({"state": state}, ensure_ascii=False) + "\n")
+        return 0
+
+    if op == "handle-hook":
+        agent, event, input_data = rest[0], rest[1], json.loads(rest[2])
+        result = mod.handle_hook(agent, event, input_data)
+        sys.stdout.write(json.dumps({"value": result}, ensure_ascii=False) + "\n")
+        return 0
+
+    if op == "ensure-info-exclude":
+        mod.ensure_info_exclude(rest[0])
+        sys.stdout.write(json.dumps({"ok": True}) + "\n")
+        return 0
+
     sys.stderr.write(f"unknown op: {op}\n")
     return 2
 
