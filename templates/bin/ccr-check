@@ -7,4 +7,4 @@ Run consolidated CCR diagnostics: selftest, doctor summary, readiness, preview, 
 USAGE
   exit 0
 ;; esac
-exec python3 "$HOME/.local/bin/ccr-hook.py" --command check "$@"
+exec bun "$HOME/.local/bin/ccr-cli.js" --command check "$@"

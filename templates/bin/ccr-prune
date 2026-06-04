@@ -8,4 +8,4 @@ Defaults: --keep 20 --days 30. Add --apply to actually remove candidates.
 USAGE
   exit 0
 ;; esac
-exec python3 "$HOME/.local/bin/ccr-hook.py" --command prune "$@"
+exec bun "$HOME/.local/bin/ccr-cli.js" --command prune "$@"

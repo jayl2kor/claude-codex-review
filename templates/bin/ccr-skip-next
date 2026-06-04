@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
 set -euo pipefail
 case "${1:-}" in -h|--help) echo "Usage: ccr-skip-next     Skip the next automatic review round (one-shot marker)."; exit 0 ;; esac
-exec python3 "$HOME/.local/bin/ccr-hook.py" --command skip-next
+exec bun "$HOME/.local/bin/ccr-cli.js" --command skip-next

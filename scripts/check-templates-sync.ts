@@ -36,7 +36,10 @@ const REPO = join(import.meta.dir, "..");
 const SRC = join(REPO, "ccr.sh");
 const TPL = join(REPO, "templates");
 
-const EXPECTED_FILE_COUNT = 44;
+// 43 `cat >` heredoc emissions. The runtime bundle templates/bin/ccr-cli.js is
+// NOT a heredoc (it is a generated, copy-installed artifact — see allowlist
+// below and bundle-sync.test.ts), so it is not counted here.
+const EXPECTED_FILE_COUNT = 43;
 
 // $VAR in the heredoc header -> templates subdirectory root.
 const VAR_MAP: Record<string, string> = {
@@ -196,35 +199,8 @@ function main(): number {
   // emissions, so they must not be flagged as "extra" drift.
   const allowedExtraRel = new Set<string>([
     relative(REPO, join(TPL, "README.md")), // human-authored directory note
-    relative(REPO, join(TPL, "selftest-install.py")), // derived from SELFTEST block (verified below)
+    relative(REPO, join(TPL, "bin", "ccr-cli.js")), // generated Bun runtime bundle (copy-installed, not a heredoc; guarded by bundle-sync.test.ts)
   ]);
-
-  // The install-time selftest ships as templates/selftest-install.py, derived
-  // from ccr.sh's `python3 - <<'SELFTEST'` block (header + trailing delimiter
-  // stripped). Verify it byte-for-byte so the SELFTEST block can't drift either.
-  const selftestRel = relative(REPO, join(TPL, "selftest-install.py"));
-  const selftestBlocks = parsed.pyBlocks.filter((b) => b.delim === "SELFTEST");
-  if (selftestBlocks.length !== 1) {
-    problems.push(
-      `SELFTEST  expected exactly 1 \`<<'SELFTEST'\` block in ccr.sh, found ${selftestBlocks.length}`,
-    );
-  } else {
-    const dest = join(TPL, "selftest-install.py");
-    const expectedContent = selftestBlocks[0].body.join("\n") + "\n";
-    if (!existsSync(dest)) {
-      problems.push(
-        `MISSING   ${selftestRel} — derived from ccr.sh SELFTEST block (line ${selftestBlocks[0].openLine}) but not on disk`,
-      );
-    } else {
-      const actualContent = readFileSync(dest, "utf8");
-      if (actualContent !== expectedContent) {
-        problems.push(
-          `DIFFERENT ${selftestRel} — differs from ccr.sh SELFTEST block (line ${selftestBlocks[0].openLine})\n` +
-            firstLineDiff(expectedContent, actualContent),
-        );
-      }
-    }
-  }
 
   // Every file the parse says ccr.sh emits, mapped to its template path.
   const expectedRel = new Set<string>();

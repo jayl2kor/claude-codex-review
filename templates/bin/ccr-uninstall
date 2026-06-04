@@ -8,4 +8,4 @@ Dry-run by default. --apply removes installed binaries, slash commands, and hook
 USAGE
   exit 0
 ;; esac
-exec python3 "$HOME/.local/bin/ccr-hook.py" --command uninstall "$@"
+exec bun "$HOME/.local/bin/ccr-cli.js" --command uninstall "$@"

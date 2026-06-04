@@ -411,4 +411,16 @@
 - [x] `shared.ts` `captureStdout`; exported previewData/pruneCandidates/configDoc/readEvents. All 20 commands wired into `cli.ts`.
 - [x] Oracle test `test/phase5d.test.ts` (16 cases): fake install under temp HOME + subprocess parity — doctor (healthy/degraded/json), ready, selftest (all 12 PASS, text+json), check rollup, support (--print), uninstall (dry-run/+purge). Full suite 933 pass / 1 skip / 0 fail; typecheck + check:sync green.
 - [x] Known divergence: support `.zip` bytes (STORED vs Python DEFLATE) are not byte-compared; stdout (path, messages, manifest/contents file list) is.
-- [ ] **5f (now UNBLOCKED — all 20 commands ported):** `bun build` → templates/bin/ccr-cli.js (+ check:sync allowlist); rewire ccr.sh bins python3→bun; de-python install.ts; repoint oracle tests off ccr-hook.py; remove `templates/bin/ccr-hook.py`. Keep ccr.sh.
+- [x] **5f (DONE — Python runtime fully removed; migration complete):** `bun build` → `templates/bin/ccr-cli.js`; rewire ccr.sh bins python3→bun; de-python install.ts; repoint oracle tests off ccr-hook.py; remove `templates/bin/ccr-hook.py`. Kept ccr.sh. (Details below.)
+
+## migration-phase-5f-cutover-remove-python
+
+- [x] Build `src/cli.ts` → single dependency-inlined `templates/bin/ccr-cli.js` (Bun.build, default output path). NOT embedded inline in `ccr.sh` (per the plan's "[check:sync 허용]"): `ccr.sh` installs it by `cp`-ing from its own checkout (`$CCR_SCRIPT_DIR/templates/bin/ccr-cli.js`, clear error if missing), so the `ccr.sh` diff stays small/reviewable and the bundle isn't duplicated. `bash -n` clean.
+- [x] Rewire all 22 `ccr.sh` bin wrappers `exec python3 …/ccr-hook.py` → `exec bun …/ccr-cli.js`; `need_cmd python3` → `need_cmd bun`.
+- [x] Convert the 3 install-time Python blocks to bun: settings-merge (`bun run - <<'JS'`, mirrors install.ts mergeSettings), install-selftest (`bun ccr-cli.js --command selftest`), json-validate (`bun run - <<'JS'`). ccr.sh no longer invokes Python.
+- [x] De-python `install.ts` (needCmd bun, step-7 selftest via bun ccr-cli.js); `constants.ts` GENERATED_BIN_NAMES ccr-hook.py→ccr-cli.js; `uninstall.ts` legacy ccr-hook.py cleanup.
+- [x] Remove `templates/bin/ccr-hook.py` + `templates/selftest-install.py`; drop the SELFTEST special-case from `check-templates-sync.ts`; allowlist `templates/bin/ccr-cli.js` (heredoc emit count 44→43). Mark the bundle `-diff linguist-generated` in `.gitattributes`.
+- [x] `scripts/build-cli.ts` default output → `templates/bin/ccr-cli.js`; add `scripts/extract-templates.ts` (ccr.sh→templates re-extraction); wire `extract:templates` package script.
+- [x] Delete all Python-oracle tests (golden/differential/phase3/phase4*/phase5a–d + probes/runners/integration_loop/loop); trim the Python-oracle case from `constants.test.ts`.
+- [x] Add TS-only replacements: `test/bundle-sync.test.ts` (committed bundle ≡ fresh build) and `test/install-e2e.test.ts` (real `bash ccr.sh` into an isolated HOME, then run the installed runtime).
+- [x] Verify: `typecheck`, `check:sync` (44 files), full suite 26 pass/0 fail; mark Phase 5f done in `docs/ccr-js-migration-plan.md`.

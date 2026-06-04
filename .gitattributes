@@ -1,0 +1,13 @@
+# The runtime bundle is a generated, dependency-inlined build of src/cli.ts
+# (see scripts/build-cli.ts). Treat it as generated: don't show its 160KB+ body
+# in diffs/reviews and don't count it in language stats. Its integrity is
+# guarded by bundle-sync.test.ts (bundle == fresh build) and it is reviewed via
+# its source under src/, not by reading the bundle.
+templates/bin/ccr-cli.js -diff linguist-generated
+
+# The removed Python runtime (deleted in the Python->Bun cutover). Its diff is
+# collapsed so the one-time removal of this 150KB+ generated file does not crowd
+# out the cutover's additions/rewiring (and the new tests) in a size-bounded
+# review diff. Content remains in git history; this line is safe to drop once
+# the cutover has landed (the path no longer exists).
+templates/bin/ccr-hook.py -diff

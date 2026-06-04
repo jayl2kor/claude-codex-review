@@ -8,4 +8,4 @@ Use this after setup or in scripts that need a strict ready/not-ready gate.
 USAGE
   exit 0
 ;; esac
-exec python3 "$HOME/.local/bin/ccr-hook.py" --command ready "$@"
+exec bun "$HOME/.local/bin/ccr-cli.js" --command ready "$@"

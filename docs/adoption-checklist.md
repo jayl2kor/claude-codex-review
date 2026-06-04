@@ -11,7 +11,7 @@ Use this checklist when enabling CCR for a repository or team. It is intentional
 
 ## Prerequisites
 
-- [ ] `python3` is available for installation.
+- [ ] `bun` is available for installation.
 - [ ] `cmux`, `claude`, and `codex` are available for runtime use.
 - [ ] The target directory is a git worktree.
 - [ ] The team understands that review artifacts are stored under `.cmux/ccr/`.

@@ -98,28 +98,35 @@ Verify that the default manifest marks payload inclusion as false, and that payl
 Verify Markdown code fences before sharing docs, especially when templates contain nested code blocks:
 
 ```sh
-python3 - <<'PY'
-from pathlib import Path
+bun run - <<'JS'
+import { readFileSync, readdirSync } from "node:fs";
 
-for path in sorted(Path("docs").glob("*.md")) + [Path("README.md"), Path("TODO.md")]:
-    stack = []
-    for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-        stripped = line.lstrip()
-        if stripped.startswith("```") or stripped.startswith("~~~"):
-            ch = stripped[0]
-            count = len(stripped) - len(stripped.lstrip(ch))
-            if not stack:
-                stack.append((ch, count, lineno))
-            else:
-                prev_ch, prev_count, _ = stack[-1]
-                if ch == prev_ch and count >= prev_count:
-                    stack.pop()
-                else:
-                    stack.append((ch, count, lineno))
-    if stack:
-        raise SystemExit(f"unclosed fence in {path}: {stack}")
-print("markdown fence verification OK")
-PY
+const docs = readdirSync("docs").filter((f) => f.endsWith(".md")).sort().map((f) => `docs/${f}`);
+for (const path of [...docs, "README.md", "TODO.md"]) {
+  const stack = [];
+  const lines = readFileSync(path, "utf-8").split("\n");
+  for (let lineno = 1; lineno <= lines.length; lineno++) {
+    const stripped = lines[lineno - 1].replace(/^\s+/, "");
+    if (stripped.startsWith("```") || stripped.startsWith("~~~")) {
+      const ch = stripped[0];
+      let count = 0;
+      while (count < stripped.length && stripped[count] === ch) count++;
+      if (stack.length === 0) {
+        stack.push([ch, count, lineno]);
+      } else {
+        const [prevCh, prevCount] = stack[stack.length - 1];
+        if (ch === prevCh && count >= prevCount) stack.pop();
+        else stack.push([ch, count, lineno]);
+      }
+    }
+  }
+  if (stack.length) {
+    console.error(`unclosed fence in ${path}: ${JSON.stringify(stack)}`);
+    process.exit(1);
+  }
+}
+console.log("markdown fence verification OK");
+JS
 ```
 
 When command names, docs entry points, or onboarding flows change, verify links and references:

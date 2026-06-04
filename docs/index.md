@@ -33,7 +33,7 @@ The primary user guide is:
 | Area | Location | Purpose |
 |---|---|---|
 | Installer | [`ccr.sh`](../ccr.sh) | Creates shell commands in `~/.local/bin`, writes hook configuration, creates slash commands, and runs self-tests. |
-| Runtime hook engine | Generated from [`ccr.sh`](../ccr.sh) into `~/.local/bin/ccr-hook.py` | Handles Claude/Codex hook events, diff collection, review routing, decisions, state, and reports. |
+| Runtime hook engine | Generated from [`ccr.sh`](../ccr.sh) into `~/.local/bin/ccr-cli.js` (Bun bundle) | Handles Claude/Codex hook events, diff collection, review routing, decisions, state, and reports. |
 | Shell helpers | Generated from [`ccr.sh`](../ccr.sh) into `~/.local/bin/ccr-lib.sh` | Detects cmux workspace/surface state and registered agent surfaces. |
 | User commands | Generated from [`ccr.sh`](../ccr.sh) into `~/.local/bin/ccr-*` | Exposes enable, disable, status, request, cancel, history, events, show, preview, prune, config, check, report, ready, selftest, support, skip-next, reset, and uninstall commands. |
 | Claude slash commands | Generated from [`ccr.sh`](../ccr.sh) into `~/.claude/commands` | Adds Claude-side helper commands such as `/ccr-request`, `/ccr-status`, `/ccr-history`, `/ccr-events`, `/ccr-skip-next`, `/ccr-preview`, `/ccr-prune`, `/ccr-config`, `/ccr-check`, `/ccr-report`, `/ccr-ready`, `/ccr-selftest`, `/ccr-doctor`, and `/ccr-support`. |
@@ -74,7 +74,7 @@ CCR marks a turn as reviewable only after known file-mutating tools or Bash comm
 
 New user prompts reset the automatic review round counter only when no review request is active. In-flight reviews keep their round number, diff hash, and request metadata until the reviewer responds or the request is cancelled.
 
-The installer only requires `python3`. Runtime workflow commands require `cmux`, `claude`, and `codex`; `ccr-doctor` reports those as runtime checks. CCR does not require `jq`; JSON validation is handled by Python.
+The installer only requires `bun` (the runtime is a bundled Bun CLI). Runtime workflow commands require `cmux`, `claude`, and `codex`; `ccr-doctor` reports those as runtime checks. CCR does not require `jq`; JSON validation is handled by `bun`.
 
 ## Command Index
 

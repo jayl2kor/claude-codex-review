@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
 set -euo pipefail
 case "${1:-}" in -h|--help) echo "Usage: ccr-reset         Wipe and recreate .cmux/ccr state for the current cwd."; exit 0 ;; esac
-exec python3 "$HOME/.local/bin/ccr-hook.py" --command reset
+exec bun "$HOME/.local/bin/ccr-cli.js" --command reset

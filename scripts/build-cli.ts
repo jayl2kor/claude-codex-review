@@ -1,15 +1,15 @@
 #!/usr/bin/env bun
 /**
- * build-cli.ts — bundle src/cli.ts into a single, dependency-inlined ccr-cli.js
- * (Phase 5e of the Python->Bun migration). The bundle is what the generated
- * `ccr-*` bin wrappers will `exec bun ...` against once the 5f cutover rewires
- * ccr.sh off the Python runtime.
+ * build-cli.ts — bundle src/cli.ts into a single, dependency-inlined ccr-cli.js.
+ * This is the runtime the generated `ccr-*` bin wrappers `exec bun ...` against;
+ * ccr.sh and install.ts copy-install the committed bundle (it is NOT embedded
+ * inline in ccr.sh).
  *
  * Usage:
  *   bun run scripts/build-cli.ts [outfile]
- * Default outfile: <repo>/dist/ccr-cli.js. The output is deterministic for a
- * given source tree (no minify), so a committed bundle can be drift-checked by
- * rebuilding and byte-comparing.
+ * Default outfile: <repo>/templates/bin/ccr-cli.js (the committed bundle). The
+ * output is deterministic for a given source tree (no minify), so the committed
+ * bundle is drift-checked by rebuilding and byte-comparing (bundle-sync.test.ts).
  *
  * Zero npm deps — Bun.build + node:* only.
  */
@@ -18,7 +18,10 @@ import { mkdirSync } from "node:fs";
 
 const REPO = resolve(import.meta.dir, "..");
 const ENTRY = join(REPO, "src", "cli.ts");
-const outfile = process.argv[2] ? resolve(process.argv[2]) : join(REPO, "dist", "ccr-cli.js");
+// Default target is the committed runtime bundle that ccr.sh copy-installs and
+// install.ts copies. Pass an explicit outfile (e.g. a temp path) to build
+// elsewhere — phase5e/bundle-sync tests do this to compare against the committed copy.
+const outfile = process.argv[2] ? resolve(process.argv[2]) : join(REPO, "templates", "bin", "ccr-cli.js");
 
 const result = await Bun.build({
   entrypoints: [ENTRY],

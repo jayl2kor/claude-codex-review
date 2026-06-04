@@ -7,4 +7,4 @@ Generate (or regenerate) a Markdown report for the latest or given session.
 USAGE
   exit 0
 ;; esac
-exec python3 "$HOME/.local/bin/ccr-hook.py" --command report "$@"
+exec bun "$HOME/.local/bin/ccr-cli.js" --command report "$@"

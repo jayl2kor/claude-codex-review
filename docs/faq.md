@@ -114,7 +114,7 @@ The default retention behavior is `--keep 20 --days 30`.
 
 ## Does CCR Require jq?
 
-No. Installation requires only `python3`. Runtime workflow commands require `cmux`, `claude`, and `codex`. JSON validation and automation examples use Python.
+No. Installation requires only `bun` (the runtime is a bundled Bun CLI). Runtime workflow commands require `cmux`, `claude`, and `codex`. JSON validation and automation examples use `bun`.
 
 ## Where Are Review Files Stored?
 

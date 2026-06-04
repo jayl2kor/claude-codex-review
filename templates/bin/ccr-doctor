@@ -8,4 +8,4 @@ Diagnose CCR installation, hooks, cmux, git, and runtime state.
 USAGE
   exit 0
 ;; esac
-exec python3 "$HOME/.local/bin/ccr-hook.py" --command doctor "$@"
+exec bun "$HOME/.local/bin/ccr-cli.js" --command doctor "$@"

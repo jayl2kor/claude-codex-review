@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
 set -euo pipefail
 case "${1:-}" in -h|--help) echo "Usage: ccr-cancel        Soft-cancel any active CCR review (preserves history)."; exit 0 ;; esac
-exec python3 "$HOME/.local/bin/ccr-hook.py" --command cancel
+exec bun "$HOME/.local/bin/ccr-cli.js" --command cancel

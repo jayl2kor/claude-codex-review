@@ -7,4 +7,4 @@ Show completed review rounds in latest-first order. Default limit: 20.
 USAGE
   exit 0
 ;; esac
-exec python3 "$HOME/.local/bin/ccr-hook.py" --command history "$@"
+exec bun "$HOME/.local/bin/ccr-cli.js" --command history "$@"

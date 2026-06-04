@@ -158,4 +158,4 @@ ccr-check
 - Consider adding generated-command metadata directly from one source if the shell script grows further.
 - Consider a small fixture-based test harness outside the installer if self-tests become too large.
 - Keep support bundle defaults conservative; payload files should remain opt-in.
-- Continue to prefer `python3` examples over `jq` so install-time dependencies stay minimal.
+- Prefer `bun` examples over `jq` for JSON parsing so install-time dependencies stay minimal (`bun` is the sole install-time prerequisite).

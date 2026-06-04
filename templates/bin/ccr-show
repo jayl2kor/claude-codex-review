@@ -7,4 +7,4 @@ Show paths for the latest (or specified) review round. --review prints review.md
 USAGE
   exit 0
 ;; esac
-exec python3 "$HOME/.local/bin/ccr-hook.py" --command show "$@"
+exec bun "$HOME/.local/bin/ccr-cli.js" --command show "$@"

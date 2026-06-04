@@ -7,4 +7,4 @@ Show effective CCR environment variables, paths, generated command names, and di
 USAGE
   exit 0
 ;; esac
-exec python3 "$HOME/.local/bin/ccr-hook.py" --command config "$@"
+exec bun "$HOME/.local/bin/ccr-cli.js" --command config "$@"

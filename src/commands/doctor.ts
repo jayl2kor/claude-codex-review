@@ -33,7 +33,10 @@ export function doctorRows(cwd: string): DoctorRow[] {
     rows.push({ status, name, detail });
   };
 
-  for (const name of ["python3", ...RUNTIME_COMMANDS]) {
+  // `bun` runs the installed runtime (ccr-cli.js) via the bin wrappers, so it is
+  // the required command (Phase 5f: Python is no longer used at install or
+  // runtime). cmux/claude/codex remain runtime-workflow requirements.
+  for (const name of ["bun", ...RUNTIME_COMMANDS]) {
     const found = which(name);
     add(found ? "ok" : "fail", `command: ${name}`, found || "not found in PATH");
   }

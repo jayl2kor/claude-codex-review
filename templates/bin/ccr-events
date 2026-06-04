@@ -7,4 +7,4 @@ Show recent .cmux/ccr/events.jsonl runtime events. Default limit: 50.
 USAGE
   exit 0
 ;; esac
-exec python3 "$HOME/.local/bin/ccr-hook.py" --command events "$@"
+exec bun "$HOME/.local/bin/ccr-cli.js" --command events "$@"

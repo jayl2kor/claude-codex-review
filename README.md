@@ -25,7 +25,7 @@ bash ccr.sh
 
 Install-time requirement:
 
-- `python3`
+- `bun`
 
 Runtime workflow requirements, checked by `ccr-doctor`:
 

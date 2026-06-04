@@ -8,7 +8,7 @@ Most commands support `--help`. Commands with `--json` are suitable for scripts,
 
 | Command | Use When | Notes |
 |---|---|---|
-| `bash ccr.sh` | Installing or reinstalling CCR. | Requires only `python3`; runtime dependencies are checked later. |
+| `bash ccr.sh` | Installing or reinstalling CCR. | Requires only `bun`; runtime dependencies are checked later. |
 | `ccr-help` | You need the shortest local quickstart. | Prints setup steps, daily commands, diagnostics, and docs entry points. |
 | `cmux-setup-claude` | Registering the current cmux surface as Claude. | Also launches Claude Code. |
 | `cmux-setup-codex` | Registering the current cmux surface as Codex. | Also launches Codex in workspace-write mode. |

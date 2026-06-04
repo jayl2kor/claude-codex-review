@@ -8,4 +8,4 @@ By default, request/review/diff payloads are excluded. Use --include-diffs only 
 USAGE
   exit 0
 ;; esac
-exec python3 "$HOME/.local/bin/ccr-hook.py" --command support "$@"
+exec bun "$HOME/.local/bin/ccr-cli.js" --command support "$@"

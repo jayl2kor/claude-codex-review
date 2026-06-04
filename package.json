@@ -12,7 +12,8 @@
     "check:sync": "bun run scripts/check-templates-sync.ts",
     "typecheck": "tsc --noEmit",
     "build-check": "bun build src/install.ts --target=bun --outfile=/dev/null",
-    "build:cli": "bun run scripts/build-cli.ts"
+    "build:cli": "bun run scripts/build-cli.ts",
+    "extract:templates": "bun run scripts/extract-templates.ts"
   },
   "devDependencies": {
     "@types/bun": "^1.3.14",

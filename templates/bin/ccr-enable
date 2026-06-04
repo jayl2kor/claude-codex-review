@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
 set -euo pipefail
 case "${1:-}" in -h|--help) echo "Usage: ccr-enable        Enable CCR for the current cmux workspace and cwd."; exit 0 ;; esac
-exec python3 "$HOME/.local/bin/ccr-hook.py" --command enable
+exec bun "$HOME/.local/bin/ccr-cli.js" --command enable

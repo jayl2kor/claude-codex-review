@@ -8,4 +8,4 @@ Does not mark dirty, consume skip markers, create rounds, or send handoffs.
 USAGE
   exit 0
 ;; esac
-exec python3 "$HOME/.local/bin/ccr-hook.py" --command preview "$@"
+exec bun "$HOME/.local/bin/ccr-cli.js" --command preview "$@"

@@ -52,7 +52,7 @@ export const CCR_DEFAULTS: Record<string, string> = {
 export const RUNTIME_COMMANDS = ["cmux", "claude", "codex"];
 
 export const GENERATED_BIN_NAMES = [
-  "ccr-lib.sh", "ccr-hook.py", "ccr-hook-claude", "ccr-hook-codex",
+  "ccr-lib.sh", "ccr-cli.js", "ccr-hook-claude", "ccr-hook-codex",
   "cmux-setup-claude", "cmux-setup-codex",
   "ccr-help", "ccr-enable", "ccr-disable", "ccr-status", "ccr-request", "ccr-reset",
   "ccr-cancel", "ccr-history", "ccr-show", "ccr-skip-next", "ccr-report",

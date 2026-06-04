@@ -1,18 +1,5 @@
 import { test, expect } from "bun:test";
-import { spawnSync } from "node:child_process";
-import { join } from "node:path";
 import { pyInt, CCR_DEFAULTS } from "../src/lib/constants.ts";
-
-// Numeric env defaults that must stay equal between the TS port and the Python
-// runtime. CCR_ROOT is a per-cwd path placeholder, not a numeric default, so it
-// is excluded from strict parity.
-const NUMERIC_DEFAULT_KEYS = [
-  "CCR_MAX_ROUNDS",
-  "CCR_MAX_UNTRACKED_BYTES",
-  "CCR_MAX_DIFF_BYTES",
-  "CCR_MIN_DIFF_LINES",
-  "CCR_STALE_ACTIVE_SECONDS",
-];
 
 test("pyInt enforces Python int() strictness (full-string integer)", () => {
   expect(pyInt("42", "x")).toBe(42);
@@ -29,16 +16,13 @@ test("pyInt enforces Python int() strictness (full-string integer)", () => {
   expect(() => pyInt("1_000", "x")).toThrow();
 });
 
-test("CCR_DEFAULTS numeric defaults match the Python runtime config", () => {
-  const hook = join(import.meta.dir, "..", "templates", "bin", "ccr-hook.py");
-  const res = spawnSync("python3", [hook, "--command", "config", "--json"], {
-    encoding: "utf-8",
-  });
-  expect(res.status).toBe(0);
-  const env = JSON.parse(res.stdout).environment ?? {};
-  for (const key of NUMERIC_DEFAULT_KEYS) {
-    expect(env[key]?.default).toBe(CCR_DEFAULTS[key]);
-  }
-  // Spot-check the value that diverged this round.
+test("CCR_DEFAULTS pins the documented numeric env defaults", () => {
+  // These were locked against the (now-removed) Python runtime during the
+  // migration; they are the contract the docs/installer advertise, so pin them
+  // directly. Changing a default is a deliberate act that must update this test.
+  expect(CCR_DEFAULTS.CCR_MAX_ROUNDS).toBe("3");
+  expect(CCR_DEFAULTS.CCR_MAX_UNTRACKED_BYTES).toBe("200000");
+  expect(CCR_DEFAULTS.CCR_MAX_DIFF_BYTES).toBe("300000");
+  expect(CCR_DEFAULTS.CCR_MIN_DIFF_LINES).toBe("0");
   expect(CCR_DEFAULTS.CCR_STALE_ACTIVE_SECONDS).toBe("1800");
 });

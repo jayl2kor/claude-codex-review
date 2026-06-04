@@ -23,7 +23,13 @@ export function commandUninstall(args: CcrArgs): number {
   const cmdRoot = join(home, ".claude", "commands");
   const settings = join(home, ".claude", "settings.json");
   const codexHooks = join(home, ".codex", "hooks.json");
-  const targetsBin = GENERATED_BIN_NAMES.map((f) => join(binRoot, f)).filter(exists);
+  // Legacy bins from a pre-5f (Python runtime) install: removed if still present
+  // so an upgrade-then-uninstall does not orphan them. NOT part of
+  // GENERATED_BIN_NAMES, so a current install never flags them as "missing".
+  const LEGACY_BIN_NAMES = ["ccr-hook.py"];
+  const targetsBin = [...GENERATED_BIN_NAMES, ...LEGACY_BIN_NAMES]
+    .map((f) => join(binRoot, f))
+    .filter(exists);
   const targetsCmd = GENERATED_CLAUDE_COMMAND_FILES.map((f) => join(cmdRoot, f)).filter(exists);
   const purgeDirs: string[] = [];
   if (args.purge) {

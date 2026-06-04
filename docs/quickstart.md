@@ -13,7 +13,7 @@ ccr-help
 
 Install-time requirement:
 
-- `python3`
+- `bun`
 
 Runtime commands are checked after install:
 

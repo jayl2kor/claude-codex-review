@@ -12,7 +12,7 @@ bash ccr.sh
 
 The installer rewrites generated files such as:
 
-- `~/.local/bin/ccr-hook.py`
+- `~/.local/bin/ccr-cli.js`
 - `~/.local/bin/ccr-*`
 - `~/.local/bin/cmux-setup-*`
 - `~/.claude/commands/ccr-*.md`

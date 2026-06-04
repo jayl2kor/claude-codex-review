@@ -6,33 +6,33 @@ This document explains how CCR is structured and how to modify it safely. For us
 
 CCR is intentionally packaged as a single installer script:
 
-- [`../ccr.sh`](../ccr.sh) is the source of truth.
+- [`../ccr.sh`](../ccr.sh) is the source of truth (it expands the bin wrappers, slash commands, and config as heredocs).
 - Running `bash ccr.sh` writes generated files into `~/.local/bin` and `~/.claude/commands`.
-- The generated runtime is `~/.local/bin/ccr-hook.py`.
-- Shell wrappers such as `ccr-status`, `ccr-ready`, and `ccr-support` call `ccr-hook.py --command ...`.
+- The generated runtime is `~/.local/bin/ccr-cli.js`, a single dependency-inlined Bun bundle built from [`../src/cli.ts`](../src/cli.ts). It is NOT embedded inline in `ccr.sh`; it ships as the committed file [`../templates/bin/ccr-cli.js`](../templates/bin/ccr-cli.js) and `ccr.sh` installs it by copying that file from its own repo checkout (so `ccr.sh` stays small and the bundle is not duplicated).
+- Shell wrappers such as `ccr-status`, `ccr-ready`, and `ccr-support` call `bun ccr-cli.js --command ...`.
 - Claude and Codex hook configuration is merged into `~/.claude/settings.json` and `~/.codex/hooks.json`.
 
-This keeps installation simple, but it means changes to runtime behavior, generated commands, hook merge logic, and self-tests often happen in the same file.
+The runtime is authored as TypeScript under [`../src/`](../src) (`src/cli.ts`, `src/lib/*`, `src/commands/*`); `bun run build:cli` bundles it into `templates/bin/ccr-cli.js`. Integrity is guarded by `bundle-sync.test.ts` (committed bundle == a fresh `src/cli.ts` build) and `check:sync` (the 43 heredoc templates == `ccr.sh`). `bash ccr.sh` only requires `bun` — there is no Python at install or runtime.
 
 ## Generated Components
 
 | Component | Generated Location | Purpose |
 |---|---|---|
-| `ccr-hook.py` | `~/.local/bin/ccr-hook.py` | Main Python runtime for hook events and shell commands. |
+| `ccr-cli.js` | `~/.local/bin/ccr-cli.js` | Main Bun runtime bundle for hook events and shell commands (built from `src/cli.ts`). |
 | `ccr-lib.sh` | `~/.local/bin/ccr-lib.sh` | cmux workspace/surface helpers used by setup commands. |
 | `ccr-hook-claude` | `~/.local/bin/ccr-hook-claude` | Claude hook entry wrapper. |
 | `ccr-hook-codex` | `~/.local/bin/ccr-hook-codex` | Codex hook entry wrapper. |
 | `cmux-setup-claude` | `~/.local/bin/cmux-setup-claude` | Registers the current surface as Claude and launches Claude Code. |
 | `cmux-setup-codex` | `~/.local/bin/cmux-setup-codex` | Registers the current surface as Codex and launches Codex. |
-| `ccr-*` commands | `~/.local/bin/ccr-*` | User commands that delegate to `ccr-hook.py --command`. |
+| `ccr-*` commands | `~/.local/bin/ccr-*` | User commands that delegate to `bun ccr-cli.js --command`. |
 | Claude slash commands | `~/.claude/commands/ccr-*.md` | Claude-side command helpers. |
 
-The generated command registries live in `ccr-hook.py`:
+The generated command registries live in [`../src/lib/constants.ts`](../src/lib/constants.ts) (bundled into `ccr-cli.js`):
 
 - `GENERATED_BIN_NAMES`
 - `GENERATED_CLAUDE_COMMAND_FILES`
 
-Keep these aligned with wrapper generation, `ccr-doctor`, `ccr-uninstall`, and documentation.
+Keep these aligned with wrapper generation (the `ccr.sh` heredocs), `ccr-doctor`, `ccr-uninstall`, and documentation.
 
 ## Runtime State
 
@@ -146,23 +146,24 @@ For install-generation changes, run an isolated install as shown in [validation.
 
 When adding a `ccr-*` command, update all relevant places:
 
-1. Add Python command implementation in `ccr-hook.py`.
-2. Add the command to `argparse` choices and dispatch in `main()`.
-3. Add a shell wrapper under `cat > "$BIN_ROOT/..."`.
-4. Add the command to `GENERATED_BIN_NAMES`.
+1. Add the command implementation under `src/commands/` (and any shared logic in `src/lib/`).
+2. Add the command to the arg parser (`src/lib/args.ts`) and dispatch it in `src/cli.ts`.
+3. Add a shell wrapper heredoc under `cat > "$BIN_ROOT/..."` in `ccr.sh` (`exec bun "$HOME/.local/bin/ccr-cli.js" --command ...`).
+4. Add the command to `GENERATED_BIN_NAMES` in `src/lib/constants.ts`.
 5. Add uninstall coverage through the generated registry.
 6. Add `ccr-doctor` coverage through the generated registry.
 7. Add a Claude slash command when useful.
 8. Add the slash command file to `GENERATED_CLAUDE_COMMAND_FILES`.
-9. Add self-test coverage if behavior is nontrivial.
-10. Update `README.md`, [commands.md](commands.md), [examples.md](examples.md), and [index.md](index.md).
-11. Update [automation.md](automation.md), [troubleshooting.md](troubleshooting.md), [rollout.md](rollout.md), or [templates.md](templates.md) when the command affects those workflows.
-12. Update `ccr-help` when the change creates or changes a user-facing docs entry point.
-13. Run the documentation checks from [validation.md](validation.md) when docs, templates, or help text changed.
+9. Add self-test coverage in `src/commands/selftest.ts` if behavior is nontrivial.
+10. Run `bun run build:cli` to rebuild `templates/bin/ccr-cli.js`; if you edited a `ccr.sh` heredoc, run `bun run extract:templates`; verify with `bun run check:sync`.
+11. Update `README.md`, [commands.md](commands.md), [examples.md](examples.md), and [index.md](index.md).
+12. Update [automation.md](automation.md), [troubleshooting.md](troubleshooting.md), [rollout.md](rollout.md), or [templates.md](templates.md) when the command affects those workflows.
+13. Update `ccr-help` when the change creates or changes a user-facing docs entry point.
+14. Run the documentation checks from [validation.md](validation.md) when docs, templates, or help text changed.
 
 ## Design Constraints
 
-- Keep install-time dependencies minimal; currently only `python3` is required.
+- Keep install-time dependencies minimal; currently only `bun` is required.
 - Prefer JSON output for automation-capable diagnostics.
 - Default destructive operations to dry-run (`ccr-prune`, `ccr-uninstall`).
 - Do not include request/review/diff payloads in support bundles unless explicitly requested.

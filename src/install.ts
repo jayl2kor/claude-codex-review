@@ -3,13 +3,14 @@
  * install.ts — Bun/TypeScript port of the original bash installer (ccr.sh).
  *
  * This is a faithful, non-destructive port of /tmp/ccr-inline/installer-logic.sh
- * together with the two embedded Python here-docs:
- *   - pyblock_04248.py (settings merge)
- *   - pyblock_05031.py (post-merge JSON validation)
+ * together with the two embedded install-time here-docs (now Bun, formerly
+ * Python):
+ *   - settings merge (formerly pyblock_04248.py)
+ *   - post-merge JSON validation (formerly pyblock_05031.py)
  *
- * It reproduces the original steps in the SAME ORDER. The runtime ccr-hook.py is
- * still Python, so python3 remains a hard requirement for the install-time
- * selftest only.
+ * It reproduces the original steps in the SAME ORDER. As of Phase 5f the runtime
+ * is the bundled Bun CLI (ccr-cli.js), so `bun` is the only hard requirement;
+ * Python is no longer involved at install or runtime.
  *
  * Zero npm runtime dependencies — only Bun/Node built-ins are used.
  */
@@ -448,8 +449,8 @@ function writeVersionFile(): void {
 // main — reproduces installer-logic.sh in order.
 // ===========================================================================
 function main(): void {
-  // Step 2: require python3 (runtime ccr-hook.py is still Python).
-  needCmd("python3");
+  // Step 2: require bun (the runtime is the bundled ccr-cli.js Bun CLI).
+  needCmd("bun");
 
   // Step 3: mkdir -p the same dirs; touch enabled-workspaces.txt.
   mkdirp(join(CONFIG_ROOT, "workspaces"));
@@ -500,11 +501,13 @@ function main(): void {
   // Step 6: settings merge (backup → merge → validate → remove-backup; restore on error).
   mergeSettings();
 
-  // Step 7: install-time selftest. Spawn python3 against the shipped selftest,
-  // which imports the freshly-copied ~/.local/bin/ccr-hook.py. Inherit stdio;
-  // a non-zero exit aborts the install.
-  const selftestPath = join(TEMPLATES_DIR, "selftest-install.py");
-  const selftest = spawnSync("python3", [selftestPath], { stdio: "inherit" });
+  // Step 7: install-time selftest. Run the freshly-installed runtime's own
+  // selftest (`bun ~/.local/bin/ccr-cli.js --command selftest`), which
+  // re-exercises the bundled lib in-process. Inherit stdio; a non-zero exit
+  // aborts the install.
+  const selftest = spawnSync("bun", [join(BIN_ROOT, "ccr-cli.js"), "--command", "selftest"], {
+    stdio: "inherit",
+  });
   if (selftest.status !== 0) {
     process.exit(selftest.status === null ? 1 : selftest.status);
   }
