@@ -405,5 +405,10 @@
 
 - [x] `scripts/build-cli.ts`: `Bun.build` → single dependency-inlined `dist/ccr-cli.js` (deterministic, banner-stamped). `build:cli` package script; `dist/` gitignored.
 - [x] Fidelity test `test/phase5e.test.ts` (6 cases): the bundle is behavior-identical to `bun src/cli.ts` (config/status/history/hook-gate/enabled-PreToolUse-deny; same nonzero exit on a not-yet-ported command). Full suite 917 pass / 1 skip / 0 fail; check:sync green.
-- [ ] **5d (deferred at user request):** diagnostic commands doctor/check/support/selftest/uninstall → `src/commands/*.ts`.
-- [ ] **5f (BLOCKED on 5d):** rewire ccr.sh bins python3→bun, place bundle in templates/bin + check:sync allowlist, de-python install.ts, remove `templates/bin/ccr-hook.py`. Cannot start until 5d lands (bins must dispatch all 20 commands) AND the oracle tests are repointed off ccr-hook.py (every phase test spawns/loads it).
+## migration-phase-5d-diagnostics
+
+- [x] `src/commands/diag.ts` (which / isExecutable / jsonFileContains / installLayout), `doctor.ts` (+ doctorRows/doctorDoc shared with check), `ready.ts` (+ readyChecks), `check.ts` (rollup of doctor+selftest+ready+preview+config), `support.ts` (zero-dep STORED zip writer + manifest), `selftest.ts` (12-case smoke harness re-exercising the TS lib; selftestDoc shared with check), `uninstall.ts` (strip CCR hook groups + remove bins/cmds + --purge).
+- [x] `shared.ts` `captureStdout`; exported previewData/pruneCandidates/configDoc/readEvents. All 20 commands wired into `cli.ts`.
+- [x] Oracle test `test/phase5d.test.ts` (16 cases): fake install under temp HOME + subprocess parity — doctor (healthy/degraded/json), ready, selftest (all 12 PASS, text+json), check rollup, support (--print), uninstall (dry-run/+purge). Full suite 933 pass / 1 skip / 0 fail; typecheck + check:sync green.
+- [x] Known divergence: support `.zip` bytes (STORED vs Python DEFLATE) are not byte-compared; stdout (path, messages, manifest/contents file list) is.
+- [ ] **5f (now UNBLOCKED — all 20 commands ported):** `bun build` → templates/bin/ccr-cli.js (+ check:sync allowlist); rewire ccr.sh bins python3→bun; de-python install.ts; repoint oracle tests off ccr-hook.py; remove `templates/bin/ccr-hook.py`. Keep ccr.sh.
