@@ -74,3 +74,38 @@ test("requestMarkdown emits the decision line at column 0", () => {
   const md = requestMarkdown("claude", "codex", 1, "h", "head", "/p/d");
   expect(md).toMatch(/^REVIEW_DECISION: PASS$/m);
 });
+
+describe("scopeRequestMarkdown --follow-up block", () => {
+  test("absent by default (no previous_review) — output unchanged", () => {
+    const md = scopeRequestMarkdown({ type: "code_review", files: ["a.ts"] });
+    expect(md).not.toContain("## Previous Review");
+    expect(md).not.toContain("follow-up request");
+  });
+
+  test("renders the prior review pointer, delta, and verify-claims guidance", () => {
+    const md = scopeRequestMarkdown({
+      type: "code_review",
+      files: ["a.ts"],
+      notes: ["applied null-check at parser.ts:42"],
+      previous_review: { review_file: "/p/r/review.md", decision: "NEEDS_CHANGES", must_fix_count: 3 },
+      delta_file: "/p/r2/delta.patch",
+    });
+    expect(md).toContain("## Previous Review");
+    expect(md).toContain("- File: /p/r/review.md");
+    expect(md).toContain("- Decision: NEEDS_CHANGES");
+    expect(md).toContain("- Must Fix items in previous round: 3");
+    expect(md).toContain("Incremental delta file (changes since previous round): /p/r2/delta.patch");
+    expect(md).toContain("verify each claim against the diff/delta");
+    // the block precedes the scope sections
+    expect(md.indexOf("## Previous Review")).toBeLessThan(md.indexOf("## Scope Files"));
+  });
+
+  test("omits the delta line when no delta_file is supplied", () => {
+    const md = scopeRequestMarkdown({
+      type: "code_review",
+      previous_review: { review_file: "/p/r/review.md", decision: "NEEDS_CHANGES", must_fix_count: 1 },
+    });
+    expect(md).toContain("## Previous Review");
+    expect(md).not.toContain("Incremental delta file");
+  });
+});

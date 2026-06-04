@@ -31,3 +31,9 @@ test("parseInt10 rejects malformed underscores / non-ints", () => {
     expect(() => parseArgs(["--limit", bad])).toThrow(ArgError);
   }
 });
+
+test("--follow-up is a boolean flag, default false", () => {
+  expect(parseArgs([]).follow_up).toBe(false);
+  expect(parseArgs(["--follow-up"]).follow_up).toBe(true);
+  expect(parseArgs(["--command", "request", "--follow-up", "--use-diff"]).follow_up).toBe(true);
+});

@@ -4,10 +4,12 @@ case "${1:-}" in -h|--help)
   cat <<USAGE
 Usage: ccr-request [--reviewer auto|claude|codex] [--type TYPE] [--title T]
                    [--file PATH ...] [--dir PATH ...] [--question Q ...]
-                   [--note N ...] [--use-diff|--no-diff]
+                   [--note N ...] [--use-diff|--no-diff] [--follow-up]
 TYPE: code_review | architecture_review | design_review | test_plan_review |
       security_review | general_review
 Send a scoped review request to the opposite agent.
+--follow-up threads the most recent prior review (and, with --use-diff, an
+incremental delta) into the request.
 USAGE
   exit 0
 ;; esac

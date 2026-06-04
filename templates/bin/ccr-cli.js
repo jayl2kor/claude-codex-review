@@ -1139,7 +1139,7 @@ function workspaceEnabled() {
 }
 
 // src/lib/review.ts
-import { readFileSync as readFileSync7, writeFileSync as writeFileSync3, statSync as statSync5, unlinkSync as unlinkSync3, mkdirSync as mkdirSync4 } from "fs";
+import { readFileSync as readFileSync7, writeFileSync as writeFileSync3, statSync as statSync5, unlinkSync as unlinkSync3, mkdirSync as mkdirSync4, readdirSync as readdirSync3 } from "fs";
 import { join as join6 } from "path";
 
 // src/lib/decision.ts
@@ -1769,6 +1769,27 @@ function scopeRequestMarkdown(scope) {
   const intentBlock = intentLines.length > 0 ? `
 ` + intentLines.join(`
 `) : "";
+  const prevReviewRaw = pyGet(scope, "previous_review");
+  const prevReview = prevReviewRaw !== null && typeof prevReviewRaw === "object" && !Array.isArray(prevReviewRaw) ? prevReviewRaw : null;
+  const deltaFile = pyGet(scope, "delta_file");
+  let followUpBlock = "";
+  if (pyTruthyObj(prevReview)) {
+    const lines = [
+      "## Previous Review",
+      "",
+      `- File: ${pyStr(pyGet(prevReview, "review_file", ""))}`,
+      `- Decision: ${pyStr(pyGet(prevReview, "decision", ""))}`,
+      `- Must Fix items in previous round: ${pyStr(pyGet(prevReview, "must_fix_count", 0))}`
+    ];
+    if (deltaFile != null) {
+      lines.push(`- Incremental delta file (changes since previous round): ${pyStr(deltaFile)}`);
+    }
+    lines.push("", "This is a follow-up request. Focus on whether the previous Must Fix items have been addressed; do not repeat resolved comments. Treat the Notes above as the worker's account of what was applied \u2014 verify each claim against the diff/delta, do not assume it is correct.");
+    followUpBlock = `
+` + lines.join(`
+`) + `
+`;
+  }
   return `# CCR Manual Review Request
 
 Title: ${pyStr(title)}
@@ -1777,7 +1798,7 @@ Worker: ${pyStr(pyGet(scope, "worker"))}
 Reviewer: ${pyStr(pyGet(scope, "reviewer"))}
 Scope file: ${pyStr(scopeFile)}
 Diff file: ${pyStr(diffFile || "not included")}
-${intentBlock}
+${intentBlock}${followUpBlock}
 ## Scope Files
 ${bullets(files)}
 
@@ -2393,6 +2414,50 @@ function parsePreviousReview(prevDir) {
     must_fix_count: mustFix
   };
 }
+function findLatestReviewedRound(root, excludeSessionId = "") {
+  const sessionsDir = join6(root, "sessions");
+  if (!isDir3(sessionsDir)) {
+    return null;
+  }
+  let sessionNames;
+  try {
+    sessionNames = readdirSync3(sessionsDir);
+  } catch {
+    return null;
+  }
+  let best = null;
+  for (const sid of sessionNames) {
+    if (sid === excludeSessionId) {
+      continue;
+    }
+    const roundsDir = join6(sessionsDir, sid, "rounds");
+    if (!isDir3(roundsDir)) {
+      continue;
+    }
+    let roundNames;
+    try {
+      roundNames = readdirSync3(roundsDir);
+    } catch {
+      continue;
+    }
+    for (const r of roundNames) {
+      const roundDir = join6(roundsDir, r);
+      try {
+        const st = statSync5(join6(roundDir, "decision.json"));
+        if (!st.isFile()) {
+          continue;
+        }
+        if (best === null || st.mtimeMs > best.mtime) {
+          best = { roundDir, sessionId: sid, mtime: st.mtimeMs };
+        }
+      } catch {}
+    }
+  }
+  if (best === null) {
+    return null;
+  }
+  return { roundDir: best.roundDir, sessionId: best.sessionId, diffFile: join6(best.roundDir, "diff.patch") };
+}
 function buildWorkerFollowup(roundDir, filesTouched, inputData) {
   const message = strip(String(inputData.last_assistant_message || ""));
   const files = [...new Set(filesTouched)].sort(cpCompare);
@@ -2936,6 +3001,7 @@ function defaults() {
     non_goal: null,
     invariant: null,
     use_diff: false,
+    follow_up: false,
     limit: 20,
     session: null,
     round: null,
@@ -2977,6 +3043,7 @@ var INT_FLAGS = {
 };
 var TRUE_FLAGS = {
   "--use-diff": "use_diff",
+  "--follow-up": "follow_up",
   "--review": "review",
   "--apply": "apply",
   "--purge": "purge",
@@ -3171,7 +3238,7 @@ function commandStatus() {
 
 // src/commands/history.ts
 import { join as join9 } from "path";
-import { readdirSync as readdirSync3, statSync as statSync8 } from "fs";
+import { readdirSync as readdirSync4, statSync as statSync8 } from "fs";
 function isDir4(p) {
   try {
     return statSync8(p).isDirectory();
@@ -3189,7 +3256,7 @@ function isFile7(p) {
 function sortedChildren(dir) {
   let names;
   try {
-    names = readdirSync3(dir);
+    names = readdirSync4(dir);
   } catch {
     return [];
   }
@@ -3341,7 +3408,7 @@ function commandEvents(args) {
 
 // src/commands/show.ts
 import { join as join11, basename as basename2 } from "path";
-import { readFileSync as readFileSync10, readdirSync as readdirSync4, statSync as statSync10 } from "fs";
+import { readFileSync as readFileSync10, readdirSync as readdirSync5, statSync as statSync10 } from "fs";
 function isDir5(p) {
   try {
     return statSync10(p).isDirectory();
@@ -3385,7 +3452,7 @@ function commandShow(args) {
   const roundsDir = join11(sdir, "rounds");
   let roundNames = [];
   try {
-    roundNames = readdirSync4(roundsDir).filter((n) => isDir5(join11(roundsDir, n)));
+    roundNames = readdirSync5(roundsDir).filter((n) => isDir5(join11(roundsDir, n)));
   } catch {
     roundNames = [];
   }
@@ -3740,7 +3807,7 @@ function commandReset() {
 }
 
 // src/commands/cancel.ts
-import { existsSync as existsSync7, readdirSync as readdirSync5, statSync as statSync12, unlinkSync as unlinkSync4 } from "fs";
+import { existsSync as existsSync7, readdirSync as readdirSync6, statSync as statSync12, unlinkSync as unlinkSync4 } from "fs";
 import { join as join14 } from "path";
 function commandCancel() {
   const cwd = process.cwd();
@@ -3766,7 +3833,7 @@ function commandCancel() {
     isDir6 = false;
   }
   if (isDir6) {
-    for (const name of readdirSync5(sessionsDir)) {
+    for (const name of readdirSync6(sessionsDir)) {
       const dirty = join14(sessionsDir, name, "dirty.json");
       try {
         unlinkSync4(dirty);
@@ -3815,7 +3882,7 @@ function commandSkipNext() {
 }
 
 // src/commands/prune.ts
-import { existsSync as existsSync8, readdirSync as readdirSync6, statSync as statSync13, rmSync as rmSync3, unlinkSync as unlinkSync5 } from "fs";
+import { existsSync as existsSync8, readdirSync as readdirSync7, statSync as statSync13, rmSync as rmSync3, unlinkSync as unlinkSync5 } from "fs";
 import { join as join15 } from "path";
 function mtimeSec(p) {
   return statSync13(p).mtimeMs / 1000;
@@ -3829,7 +3896,7 @@ function byMtimeDesc(dir, pred) {
   }
   let names;
   try {
-    names = readdirSync6(dir);
+    names = readdirSync7(dir);
   } catch {
     return [];
   }
@@ -4020,6 +4087,24 @@ function commandRequest(args) {
         diffPath = diffFile;
       }
     }
+    let previousReview = null;
+    let deltaPath = null;
+    if (args.follow_up) {
+      const prev = findLatestReviewedRound(root, sessionId);
+      const parsed = prev ? parsePreviousReview(prev.roundDir) : null;
+      if (parsed) {
+        previousReview = parsed;
+        if (diffPath) {
+          const candidate = join16(roundDir, "delta.patch");
+          if (computeDeltaPatch(prev.diffFile, diffPath, candidate)) {
+            deltaPath = candidate;
+          }
+        }
+      } else {
+        cmuxLog("warning", "ccr-request --follow-up: no prior reviewed round found; sending without follow-up context");
+        out("--follow-up: no prior reviewed round found; sending without follow-up context.");
+      }
+    }
     const scope = {
       version: 1,
       type: args.type,
@@ -4035,10 +4120,13 @@ function commandRequest(args) {
       questions: args.question ?? [],
       notes: args.note ?? [],
       use_diff: Boolean(args.use_diff),
+      follow_up: Boolean(args.follow_up),
       diff_hash: diffHash,
       git_head: head,
       scope_file: scopeFile,
       diff_file: diffPath,
+      delta_file: deltaPath,
+      previous_review: previousReview,
       instructions: loadReviewInstructions(root),
       intent: {
         purpose: strip(args.purpose || ""),
@@ -4337,7 +4425,7 @@ function commandReady(jsonOutput) {
 }
 
 // src/commands/support.ts
-import { mkdirSync as mkdirSync10, readdirSync as readdirSync7, readFileSync as readFileSync15, statSync as statSync15, writeFileSync as writeFileSync7 } from "fs";
+import { mkdirSync as mkdirSync10, readdirSync as readdirSync8, readFileSync as readFileSync15, statSync as statSync15, writeFileSync as writeFileSync7 } from "fs";
 import { join as join20 } from "path";
 var CRC_TABLE = (() => {
   const t = new Uint32Array(256);
@@ -4466,7 +4554,7 @@ function commandSupport(args) {
     const roundsDir = join20(sdir, "rounds");
     let roundNames = [];
     try {
-      roundNames = readdirSync7(roundsDir).filter((n) => {
+      roundNames = readdirSync8(roundsDir).filter((n) => {
         try {
           return statSync15(join20(roundsDir, n)).isDirectory();
         } catch {

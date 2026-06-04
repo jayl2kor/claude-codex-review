@@ -11,7 +11,7 @@
  * Zero npm deps — node:fs / node:path + lib modules only.
  */
 
-import { readFileSync, writeFileSync, statSync, unlinkSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, statSync, unlinkSync, mkdirSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { loadJson, writeJson, now, appendJsonl } from "./io";
@@ -95,6 +95,66 @@ export function parsePreviousReview(prevDir: string | null): PreviousReview | nu
     decision: String(decision.decision || ""),
     must_fix_count: mustFix,
   };
+}
+
+/**
+ * Find the most recently reviewed round across ALL sessions under `root` (the
+ * newest decision.json by mtime), optionally excluding one session id. Returns
+ * the round dir + its diff.patch path, or null when none exists.
+ *
+ * The automatic loop accumulates rounds under one stable session id and uses
+ * findPreviousRoundDir; the manual `ccr-request --follow-up` path cannot, because
+ * each manual request lands in a fresh `manual-<ts>` session, so the previous
+ * review lives in a DIFFERENT session dir. This cross-session lookup bridges that.
+ */
+export function findLatestReviewedRound(
+  root: string,
+  excludeSessionId: string = "",
+): { roundDir: string; sessionId: string; diffFile: string } | null {
+  const sessionsDir = join(root, "sessions");
+  if (!isDir(sessionsDir)) {
+    return null;
+  }
+  let sessionNames: string[];
+  try {
+    sessionNames = readdirSync(sessionsDir);
+  } catch {
+    return null;
+  }
+  let best: { roundDir: string; sessionId: string; mtime: number } | null = null;
+  for (const sid of sessionNames) {
+    if (sid === excludeSessionId) {
+      continue;
+    }
+    const roundsDir = join(sessionsDir, sid, "rounds");
+    if (!isDir(roundsDir)) {
+      continue;
+    }
+    let roundNames: string[];
+    try {
+      roundNames = readdirSync(roundsDir);
+    } catch {
+      continue;
+    }
+    for (const r of roundNames) {
+      const roundDir = join(roundsDir, r);
+      try {
+        const st = statSync(join(roundDir, "decision.json"));
+        if (!st.isFile()) {
+          continue;
+        }
+        if (best === null || st.mtimeMs > best.mtime) {
+          best = { roundDir, sessionId: sid, mtime: st.mtimeMs };
+        }
+      } catch {
+        /* no decision.json in this round */
+      }
+    }
+  }
+  if (best === null) {
+    return null;
+  }
+  return { roundDir: best.roundDir, sessionId: best.sessionId, diffFile: join(best.roundDir, "diff.patch") };
 }
 
 /**

@@ -322,6 +322,34 @@ export function scopeRequestMarkdown(scope: Record<string, unknown>): string {
   const intentLines = renderIntentSection(normIntent as unknown as Intent);
   const intentBlock = intentLines.length > 0 ? "\n" + intentLines.join("\n") : "";
 
+  // Follow-up context (manual `ccr-request --follow-up`): a pointer to the prior
+  // round's review + an optional incremental delta. Additive — absent when no
+  // previous_review is supplied, so the default request output is unchanged.
+  const prevReviewRaw = pyGet(scope, "previous_review");
+  const prevReview =
+    prevReviewRaw !== null && typeof prevReviewRaw === "object" && !Array.isArray(prevReviewRaw)
+      ? (prevReviewRaw as Record<string, unknown>)
+      : null;
+  const deltaFile = pyGet(scope, "delta_file");
+  let followUpBlock = "";
+  if (pyTruthyObj(prevReview)) {
+    const lines = [
+      "## Previous Review",
+      "",
+      `- File: ${pyStr(pyGet(prevReview, "review_file", ""))}`,
+      `- Decision: ${pyStr(pyGet(prevReview, "decision", ""))}`,
+      `- Must Fix items in previous round: ${pyStr(pyGet(prevReview, "must_fix_count", 0))}`,
+    ];
+    if (deltaFile != null) {
+      lines.push(`- Incremental delta file (changes since previous round): ${pyStr(deltaFile)}`);
+    }
+    lines.push(
+      "",
+      "This is a follow-up request. Focus on whether the previous Must Fix items have been addressed; do not repeat resolved comments. Treat the Notes above as the worker's account of what was applied — verify each claim against the diff/delta, do not assume it is correct.",
+    );
+    followUpBlock = "\n" + lines.join("\n") + "\n";
+  }
+
   return `# CCR Manual Review Request
 
 Title: ${pyStr(title)}
@@ -330,7 +358,7 @@ Worker: ${pyStr(pyGet(scope, "worker"))}
 Reviewer: ${pyStr(pyGet(scope, "reviewer"))}
 Scope file: ${pyStr(scopeFile)}
 Diff file: ${pyStr(diffFile || "not included")}
-${intentBlock}
+${intentBlock}${followUpBlock}
 ## Scope Files
 ${bullets(files)}
 

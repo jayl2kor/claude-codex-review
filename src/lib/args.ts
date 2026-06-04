@@ -39,6 +39,7 @@ export interface CcrArgs {
   non_goal: string | null;
   invariant: string | null;
   use_diff: boolean;
+  follow_up: boolean;
   limit: number;
   session: string | null;
   round: number | null;
@@ -62,7 +63,7 @@ function defaults(): CcrArgs {
     reviewer: "auto", type: "general_review", title: null,
     file: null, dir: null, question: null, note: null,
     purpose: null, non_goal: null, invariant: null,
-    use_diff: false, limit: 20, session: null, round: null,
+    use_diff: false, follow_up: false, limit: 20, session: null, round: null,
     review: false, apply: false, purge: false, outcome: null,
     print_body: false, json_output: false, include_diffs: false,
     keep: null, days: null,
@@ -83,7 +84,7 @@ const INT_FLAGS: Record<string, "limit" | "round" | "keep" | "days"> = {
   "--limit": "limit", "--round": "round", "--keep": "keep", "--days": "days",
 };
 const TRUE_FLAGS: Record<string, keyof CcrArgs> = {
-  "--use-diff": "use_diff", "--review": "review", "--apply": "apply",
+  "--use-diff": "use_diff", "--follow-up": "follow_up", "--review": "review", "--apply": "apply",
   "--purge": "purge", "--print": "print_body", "--json": "json_output",
   "--include-diffs": "include_diffs",
 };

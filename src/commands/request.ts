@@ -17,7 +17,8 @@ import {
 } from "../lib/cmux";
 import { lockedState, writeStatus } from "../lib/lock";
 import { opposite, sanitize } from "../lib/text";
-import { collectDiff } from "../lib/git";
+import { collectDiff, computeDeltaPatch } from "../lib/git";
+import { findLatestReviewedRound, parsePreviousReview } from "../lib/review";
 import { loadReviewInstructions } from "../lib/session";
 import { scopeRequestMarkdown } from "../lib/request";
 import { strip } from "../lib/pycompat";
@@ -106,6 +107,29 @@ export function commandRequest(args: CcrArgs): number {
       }
     }
 
+    // --follow-up: thread the most recent prior review (from any session under
+    // this CCR root) into the request, plus an incremental delta when --use-diff
+    // captured a fresh diff. Best-effort: absent context just sends a normal
+    // scoped request.
+    let previousReview: Record<string, unknown> | null = null;
+    let deltaPath: string | null = null;
+    if (args.follow_up) {
+      const prev = findLatestReviewedRound(root, sessionId);
+      const parsed = prev ? parsePreviousReview(prev.roundDir) : null;
+      if (parsed) {
+        previousReview = parsed as unknown as Record<string, unknown>;
+        if (diffPath) {
+          const candidate = join(roundDir, "delta.patch");
+          if (computeDeltaPatch(prev!.diffFile, diffPath, candidate)) {
+            deltaPath = candidate;
+          }
+        }
+      } else {
+        cmuxLog("warning", "ccr-request --follow-up: no prior reviewed round found; sending without follow-up context");
+        out("--follow-up: no prior reviewed round found; sending without follow-up context.");
+      }
+    }
+
     const scope: Record<string, unknown> = {
       version: 1,
       type: args.type,
@@ -121,10 +145,13 @@ export function commandRequest(args: CcrArgs): number {
       questions: args.question ?? [],
       notes: args.note ?? [],
       use_diff: Boolean(args.use_diff),
+      follow_up: Boolean(args.follow_up),
       diff_hash: diffHash,
       git_head: head,
       scope_file: scopeFile,
       diff_file: diffPath,
+      delta_file: deltaPath,
+      previous_review: previousReview,
       instructions: loadReviewInstructions(root),
       intent: {
         purpose: strip(args.purpose || ""),

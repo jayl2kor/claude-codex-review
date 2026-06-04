@@ -23,7 +23,7 @@ Most commands support `--help`. Commands with `--json` are suitable for scripts,
 |---|---|---|
 | `ccr-status` | Checking current CCR state. | Shows surfaces, active request, review count, skip marker, and latest report. |
 | `ccr-preview [--json]` | Asking why the current diff would or would not trigger review. | Does not mutate state or consume skip markers. |
-| `ccr-request` | Asking the opposite agent for a scoped manual review. | Supports files, dirs, questions, notes, reviewer selection, and `--use-diff`. |
+| `ccr-request` | Asking the opposite agent for a scoped manual review. | Supports files, dirs, questions, notes, reviewer selection, `--use-diff`, and `--follow-up` (thread the previous round's review + delta). |
 | `ccr-skip-next` | Skipping one automatic review. | Workspace-scoped one-shot marker. |
 | `ccr-cancel` | Recovering from a stale active review request. | Preserves session history and clears dirty flags. |
 

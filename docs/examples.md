@@ -53,6 +53,23 @@ ccr-request \
   --question "Does this implementation preserve active review state?"
 ```
 
+After a `NEEDS_CHANGES` round, add `--follow-up` so the next request threads the
+previous review (decision + Must Fix count + review file) and — with `--use-diff`
+— an incremental delta of just the changes since that round. Put your
+applied/not-applied account in `--note`; the reviewer is told to verify each
+claim against the diff rather than trust it:
+
+```sh
+ccr-request \
+  --type code_review \
+  --use-diff \
+  --follow-up \
+  --note "Applied the null-check at parser.ts:42; skipped the rename (out of scope)."
+```
+
+`--follow-up` finds the most recent reviewed round in this workspace, so it
+works even though each manual request runs in its own session.
+
 ## Manual Security Review
 
 Use this before sharing CCR output, adding support workflows, or changing payload collection.
