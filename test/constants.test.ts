@@ -25,4 +25,5 @@ test("CCR_DEFAULTS pins the documented numeric env defaults", () => {
   expect(CCR_DEFAULTS.CCR_MAX_DIFF_BYTES).toBe("300000");
   expect(CCR_DEFAULTS.CCR_MIN_DIFF_LINES).toBe("0");
   expect(CCR_DEFAULTS.CCR_STALE_ACTIVE_SECONDS).toBe("1800");
+  expect(CCR_DEFAULTS.CCR_PROMPT_GATE).toBe("on");
 });

@@ -476,6 +476,9 @@ function sessionLedgerPath(root, sessionId) {
 function skipMarkerPath(root) {
   return join(root, "skip-next.json");
 }
+function promptGatePath(root, sessionId) {
+  return join(sessionDir(root, sessionId), "prompt-gate.json");
+}
 
 // src/lib/lock.ts
 import {
@@ -595,12 +598,24 @@ var MAX_UNTRACKED_BYTES = envInt("CCR_MAX_UNTRACKED_BYTES", "200000");
 var MAX_DIFF_BYTES = envInt("CCR_MAX_DIFF_BYTES", "300000");
 var MIN_DIFF_LINES = envInt("CCR_MIN_DIFF_LINES", "0");
 var STALE_ACTIVE_SECONDS = envInt("CCR_STALE_ACTIVE_SECONDS", "1800");
+function envEnum(name, def, allowed) {
+  const raw = process.env[name];
+  const value = (raw === undefined ? def : raw).trim().toLowerCase();
+  if (!allowed.includes(value)) {
+    throw new Error(`invalid value for ${name}: ${JSON.stringify(raw)} (allowed: ${allowed.join("|")})`);
+  }
+  return value;
+}
+function promptGateMode() {
+  return envEnum("CCR_PROMPT_GATE", "on", ["on", "off", "advisory"]);
+}
 var CCR_DEFAULTS = {
   CCR_MAX_ROUNDS: "3",
   CCR_MAX_UNTRACKED_BYTES: "200000",
   CCR_MAX_DIFF_BYTES: "300000",
   CCR_MIN_DIFF_LINES: "0",
   CCR_STALE_ACTIVE_SECONDS: "1800",
+  CCR_PROMPT_GATE: "on",
   CCR_ROOT: "<cwd>/.cmux/ccr"
 };
 var RUNTIME_COMMANDS = ["cmux", "claude", "codex"];
@@ -687,8 +702,7 @@ var MUTATING_BASH_PATTERNS = [
   /(^|[;&|]\s*)pip(?:3)?\s+install\b/i,
   /(^|[;&|]\s*)cargo\s+(add|update)\b/i,
   /(^|[;&|]\s*)go\s+get\b/i,
-  />>/,
-  /(^|[^<])>[^&]/
+  />>?\s*(?!&|\/dev\/null\b)[^\s&|;>]/i
 ];
 var INTENT_FIELDS = ["purpose", "non_goal", "invariant"];
 var INTENT_LABELS = {
@@ -701,6 +715,20 @@ var INTENT_HEAD_RE = /^\s*(?:[-*]\s+)?\*?\*?([A-Za-z][A-Za-z _-]*?)\*?\*?\s*:\s*
 var CCR_HANDOFF_SENTINEL = "[ccr-handoff]";
 var CCR_HANDOFF_HEADER_RE = /^CCR\s+(?:review(?:\s+result)?\s*:|automatic\s+review\s+request\b|manual\s+review\s+request\b)/i;
 var DECISION_RE = /^\s*REVIEW_DECISION:\s*(PASS|NEEDS_CHANGES|NEEDS_HUMAN)\b/i;
+var REVIEW_VERDICT_RE = /^\s*CCR_REVIEW:\s*(request|skip)\b/i;
+var PROMPT_NOREVIEW_RE = [
+  /\bno\s+review\b/i,
+  /\b(?:don['\u2019]?t|do\s+not|do\s*n['\u2019]?t)\s+review\b/i,
+  /\bskip\s+(?:the\s+)?(?:ccr\s+)?review\b/i,
+  /(?:\uB9AC\uBDF0|review|\uAC80\uD1A0)\s*(?:\uB294|\uC740|\uB97C|\uC744)?\s*(?:\uD558\uC9C0\s*\uB9C8|\uBCF4\uB0B4\uC9C0\s*\uB9C8|\uD544\uC694\s*\uC5C6|\uC548\s*\uD574\uB3C4|\uC0DD\uB7B5|\uC2A4\uD0B5|skip)/i
+];
+var PROMPT_CHANGE_RE = [
+  /\b(?:implement|add|create|build|write|refactor|fix|repair|patch|change|modif(?:y|ies)|update|edit|rename|delete|remove|migrate|rewrite|convert|optimi[sz]e|improve|replace|introduce|extract|inline|bump|upgrade|downgrade|revert|disable|enable|support|set\s+up|wire\s+up|hook\s+up)\b/i,
+  /\bmake\s+(?:it|the|this|them|sure)\b/i
+];
+var PROMPT_CHANGE_KO_RE = /(\uC218\uC815|\uCD94\uAC00|\uAD6C\uD604|\uBCC0\uACBD|\uACE0\uCCD0|\uACE0\uCE58|\uB9CC\uB4E4\uC5B4|\uB9CC\uB4E4\uAE30|\uC791\uC131|\uC0DD\uC131|\uC0AD\uC81C|\uC81C\uAC70|\uAD50\uCCB4|\uCE58\uD658|\uB9AC\uD329\uD130|\uB9AC\uD329\uD1A0\uB9C1|\uBC18\uC601|\uC801\uC6A9|\uAC1C\uC120|\uCD5C\uC801\uD654|\uC5C5\uB370\uC774\uD2B8|\uAC31\uC2E0|\uB418\uB3CC\uB824|\uB864\uBC31|\uBCD1\uD569|\uB9C8\uC774\uADF8\uB808\uC774\uC158|\uC124\uCE58|\uB3C4\uC785|\uBC14\uAFD4|\uBC14\uAFB8)/;
+var PROMPT_READONLY_LEAD_RE = /^\s*(?:please\s+|can\s+you\s+|could\s+you\s+|would\s+you\s+|hey,?\s+)?(?:what|why|how|when|where|which|who|whose|explain|describe|summar(?:y|ize|ise)|show|list|read|print|display|tell\s+me|walk\s+me\s+through|is|are|was|were|does|do|did|can|should|would|could|will|review)\b/i;
+var PROMPT_READONLY_KO_RE = /(?:\uC65C|\uC5B4\uC9F8\uC11C|\uBB34\uC5C7|\uBB50|\uBB54|\uBB34\uC2A8|\uC5B4\uB5BB\uAC8C|\uC5B4\uB5A4|\uC5B4\uB290|\uC5B8\uC81C|\uC5B4\uB514|\uB204\uAC00|\uB204\uAD6C|\uC124\uBA85|\uC54C\uB824|\uBCF4\uC5EC|\uC77D\uC5B4|\uCD9C\uB825|\uD655\uC778|\uAD81\uAE08)|(?:\uC778\uAC00\uC694|\uC77C\uAE4C\uC694|\u3139\uAE4C\uC694|\uC744\uAE4C\uC694|\uB098\uC694|\uAC00\uC694|\uC2B5\uB2C8\uAE4C|\u3142\uB2C8\uAE4C|\uB294\uAC00|\uC740\uAC00)\s*[?\uFF1F]?\s*$/m;
 var MUST_FIX_SENTINELS = new Set([
   "none",
   "n/a",
@@ -973,6 +1001,30 @@ function clearDirty(root, sessionId) {
 function hasDirty(root, sessionId) {
   return existsSync(join2(sessionDir(root, sessionId), "dirty.json"));
 }
+function writePromptGate(root, sessionId, wantsReview, promptHead = "") {
+  if (!sessionId) {
+    return;
+  }
+  writeJson(promptGatePath(root, sessionId), {
+    at: now(),
+    wants_review: wantsReview,
+    prompt_head: promptHead
+  });
+}
+function readPromptGate(root, sessionId) {
+  const doc = loadJson(promptGatePath(root, sessionId), {});
+  const wants = getOrNull(doc, "wants_review");
+  return typeof wants === "boolean" ? wants : null;
+}
+function clearPromptGate(root, sessionId) {
+  try {
+    unlinkSync2(promptGatePath(root, sessionId));
+  } catch (err) {
+    if (!isErrno(err, "ENOENT")) {
+      throw err;
+    }
+  }
+}
 function ensureSession(root, agent, role, inputData) {
   const sid = String(getOrNull(inputData, "session_id") || "");
   const cwd = String(getOrNull(inputData, "cwd") || process.cwd());
@@ -1112,6 +1164,28 @@ function parseDecision(message) {
   }
   return "INVALID";
 }
+function parseReviewVerdict(message) {
+  let inFence = false;
+  let verdict = null;
+  for (const raw of splitlines(message || "")) {
+    const stripped = lstrip(raw);
+    if (stripped.startsWith("```") || stripped.startsWith("~~~")) {
+      inFence = !inFence;
+      continue;
+    }
+    if (inFence) {
+      continue;
+    }
+    if (stripped.startsWith(">")) {
+      continue;
+    }
+    const m = REVIEW_VERDICT_RE.exec(raw);
+    if (m) {
+      verdict = m[1].toLowerCase();
+    }
+  }
+  return verdict;
+}
 function isSentinelMustFix(text) {
   const normalized = strip(rstrip(strip(text).toLowerCase(), ".!?"));
   return !normalized || MUST_FIX_SENTINELS.has(normalized);
@@ -1137,6 +1211,44 @@ function countMustFixInText(text) {
     }
   }
   return count;
+}
+
+// src/lib/promptgate.ts
+function firstNonEmptyLine(text) {
+  for (const raw of splitlines(text)) {
+    const line = strip(raw);
+    if (line) {
+      return line;
+    }
+  }
+  return "";
+}
+function promptWantsReview(prompt) {
+  if (!prompt) {
+    return null;
+  }
+  if (PROMPT_NOREVIEW_RE.some((re) => re.test(prompt))) {
+    return false;
+  }
+  if (PROMPT_CHANGE_RE.some((re) => re.test(prompt)) || PROMPT_CHANGE_KO_RE.test(prompt)) {
+    return true;
+  }
+  if (PROMPT_READONLY_LEAD_RE.test(firstNonEmptyLine(prompt)) || PROMPT_READONLY_KO_RE.test(prompt)) {
+    return false;
+  }
+  return null;
+}
+function suppressReason(verdict, promptWants) {
+  if (verdict === "skip") {
+    return "agent_verdict_skip";
+  }
+  if (verdict === "request") {
+    return null;
+  }
+  if (promptWants === false) {
+    return "prompt_gate_readonly";
+  }
+  return null;
 }
 
 // src/lib/git.ts
@@ -1329,8 +1441,11 @@ function collectDiff(cwd) {
   }
   const [, head] = git(cwd, ["rev-parse", "--short", "HEAD"]);
   const pathspecs = diffPathspecs();
-  const [, staged] = git(cwd, ["diff", "--cached", "--no-ext-diff", "--no-textconv", "--", ...pathspecs]);
-  const [, unstaged] = git(cwd, ["diff", "--no-ext-diff", "--no-textconv", "--", ...pathspecs]);
+  const [stagedCode, staged] = git(cwd, ["diff", "--cached", "--no-ext-diff", "--no-textconv", "--", ...pathspecs]);
+  const [unstagedCode, unstaged] = git(cwd, ["diff", "--no-ext-diff", "--no-textconv", "--", ...pathspecs]);
+  if (stagedCode < 0 || unstagedCode < 0) {
+    return ["", "", "", false, 0, []];
+  }
   const untracked = readUntrackedPatch(cwd);
   const sections = [
     ["# Git HEAD", strip(head) || "unknown"],
@@ -2435,6 +2550,33 @@ function startReview(root, state, inputData, role) {
     });
     return;
   }
+  const gateMode = promptGateMode();
+  if (gateMode !== "off") {
+    const verdict = parseReviewVerdict(String(inputData.last_assistant_message || ""));
+    const promptWants = readPromptGate(root, sid);
+    clearPromptGate(root, sid);
+    const reason = suppressReason(verdict, promptWants);
+    if (gateMode === "advisory") {
+      appendJsonl(join6(root, "events.jsonl"), {
+        at: now(),
+        type: "review_gate_advisory",
+        reason: reason ?? "proceed",
+        session_id: sid
+      });
+    } else if (reason) {
+      clearDirty(root, sid);
+      writeStatus(root, state, "skipped", reason);
+      cmuxStatus("CCR skipped", "#8E8E93");
+      cmuxLog("progress", `prompt gate: ${reason}; outgoing review suppressed`);
+      appendJsonl(join6(root, "events.jsonl"), {
+        at: now(),
+        type: "skipped",
+        reason,
+        session_id: sid
+      });
+      return;
+    }
+  }
   const roundNo = reviewCount(state) + 1;
   const reviewer = opposite(role);
   const reviewerSurface = surfaceForRole(reviewer);
@@ -2607,6 +2749,7 @@ function handleUserPromptSubmit(root, state, inputData, agent, role) {
   if (isCcrHandoffPrompt(prompt)) {
     if (sid) {
       clearDirty(root, sid);
+      clearPromptGate(root, sid);
     }
     cmuxLog("progress", "UserPromptSubmit: CCR handoff received; cleared receiver dirty marker");
     return;
@@ -2615,10 +2758,15 @@ function handleUserPromptSubmit(root, state, inputData, agent, role) {
     cmuxLog("progress", "UserPromptSubmit ignored while review is active");
     return;
   }
+  const gateOn = promptGateMode() !== "off";
+  const promptWants = gateOn && sid ? promptWantsReview(prompt) : null;
   const prevCount = Math.trunc(Number((Object.prototype.hasOwnProperty.call(state, "review_count") ? state.review_count : 0) || 0));
   if (prevCount === 0 && !state.last_diff_hash) {
     if (sid && prompt && !isFile5(sessionContextPath(root, sid))) {
       captureSessionContext(root, sid, prompt);
+    }
+    if (gateOn && sid) {
+      writePromptGate(root, sid, promptWants, prompt.slice(0, 120));
     }
     return;
   }
@@ -2626,6 +2774,9 @@ function handleUserPromptSubmit(root, state, inputData, agent, role) {
   state.last_diff_hash = "";
   if (sid && prompt) {
     captureSessionContext(root, sid, prompt);
+  }
+  if (gateOn && sid) {
+    writePromptGate(root, sid, promptWants, prompt.slice(0, 120));
   }
   writeStatus(root, state, "ready", `new ${role} request (round counter reset)`);
   cmuxStatus("CCR ready", "#34C759");
@@ -2841,10 +2992,10 @@ var CHOICES = {
 };
 function parseInt10(value, flag) {
   const t = value.trim();
-  if (!/^[+-]?\d+$/.test(t)) {
+  if (!/^[+-]?\d+(_\d+)*$/.test(t)) {
     throw new ArgError(`argument ${flag}: invalid int value: '${value}'`);
   }
-  return Number.parseInt(t, 10);
+  return Number.parseInt(t.replace(/_/g, ""), 10);
 }
 function checkChoice(dest, value, flag) {
   const choices = CHOICES[dest];
@@ -2868,7 +3019,7 @@ function parseArgs(argv) {
         return inlineVal;
       }
       const v = argv[i + 1];
-      if (v === undefined) {
+      if (v === undefined || v.length > 1 && v.startsWith("-") && !/^-\d+$/.test(v)) {
         throw new ArgError(`argument ${flag}: expected one argument`);
       }
       i++;
@@ -3441,6 +3592,7 @@ function configDoc(cwd) {
     CCR_MAX_DIFF_BYTES: String(MAX_DIFF_BYTES),
     CCR_MIN_DIFF_LINES: String(MIN_DIFF_LINES),
     CCR_STALE_ACTIVE_SECONDS: String(STALE_ACTIVE_SECONDS),
+    CCR_PROMPT_GATE: promptGateMode(),
     CCR_ROOT: root
   };
   const env = {};
@@ -3600,7 +3752,7 @@ function commandCancel() {
   let cancelledActive = null;
   lockedState(root, (state) => {
     const active = state.active_request;
-    if (isPlainObject6(active)) {
+    if (isPlainObject6(active) && Object.keys(active).length > 0) {
       cancelledActive = { ...active };
     }
     state.active_request = null;
@@ -3831,6 +3983,14 @@ function commandRequest(args) {
   const reviewerSurface = surfaceForRole(reviewer);
   if (!reviewerSurface) {
     err(`No registered ${reviewer} surface. Run cmux-setup-${reviewer} in that terminal.`);
+    return 1;
+  }
+  if (isAgentRole(worker) && reviewer === worker) {
+    err(`Refusing to route a review back to the worker (${worker}). Use --reviewer auto or the opposite agent.`);
+    return 1;
+  }
+  if (reviewerSurface === workerSurface) {
+    err(`Reviewer surface equals the worker surface (${reviewerSurface}); the review would loop back to this terminal. ` + `Check cmux-setup-claude / cmux-setup-codex registration.`);
     return 1;
   }
   mkdirSync9(root, { recursive: true });
@@ -4656,9 +4816,47 @@ CCR review: PASS`) === false);
       rmSync4(td, { recursive: true, force: true });
     }
   };
+  const promptReviewGate = () => {
+    const td = tmp();
+    const oldEnv = process.env.CCR_PROMPT_GATE;
+    try {
+      process.env.CCR_PROMPT_GATE = "on";
+      const root = join21(td, "ccr");
+      mkdirSync11(root, { recursive: true });
+      const repo = join21(td, "repo");
+      mkdirSync11(repo, { recursive: true });
+      spawnSync3("sh", ["-c", "git init -q && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m i >/dev/null 2>&1"], { cwd: repo });
+      writeFileSync8(join21(repo, "x.txt"), `hello
+world
+`, "utf-8");
+      const sid = "sid-gate";
+      markDirty(root, { session_id: sid, hook_event_name: "PostToolUse" }, "claude", "claude");
+      assert(hasDirty(root, sid) === true);
+      const s1 = {};
+      startReview(root, s1, { session_id: sid, cwd: repo, last_assistant_message: `done
+CCR_REVIEW: skip` }, "claude");
+      assert(!s1.active_request, "agent verdict skip should suppress (no active_request)");
+      assert(!existsSync10(join21(sessionDir(root, sid), "rounds", "0001")), "no round dir on verdict-skip");
+      assert(readEvents(root, 5).some((e) => e.reason === "agent_verdict_skip"), "skip event logged");
+      markDirty(root, { session_id: sid, hook_event_name: "PostToolUse" }, "claude", "claude");
+      writePromptGate(root, sid, false, "what does x do?");
+      const s2 = {};
+      startReview(root, s2, { session_id: sid, cwd: repo, last_assistant_message: "here is the answer" }, "claude");
+      assert(!s2.active_request, "read-only prompt should suppress");
+      assert(readEvents(root, 5).some((e) => e.reason === "prompt_gate_readonly"), "prompt_gate_readonly event logged");
+    } finally {
+      if (oldEnv === undefined) {
+        delete process.env.CCR_PROMPT_GATE;
+      } else {
+        process.env.CCR_PROMPT_GATE = oldEnv;
+      }
+      rmSync4(td, { recursive: true, force: true });
+    }
+  };
   return [
     ["decision parser", decisionParser],
     ["dirty filter", dirtyFilter],
+    ["prompt review gate", promptReviewGate],
     ["handoff and prompt reset safety", handoffAndPrompt],
     ["diff truncation helpers", truncationAndDiff],
     ["doctor/ready/support JSON smoke", doctorReadySupportJson],

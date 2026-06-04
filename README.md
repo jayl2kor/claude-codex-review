@@ -295,6 +295,9 @@ Environment variables:
 - `CCR_MAX_UNTRACKED_BYTES`: max untracked text file size included in review diffs. Default: `200000`.
 - `CCR_MAX_DIFF_BYTES`: max combined diff size sent to the reviewer. Sections are truncated from the end (untracked first) when over budget. Default: `300000`.
 - `CCR_MIN_DIFF_LINES`: if `>0`, skip the automatic review when the diff has fewer than this many `+/-` lines. `0` (default) disables the threshold. Skipped rounds do not consume `CCR_MAX_ROUNDS`.
+- `CCR_PROMPT_GATE`: prompt-based gating of automatic reviews. `on` (default) suppresses a review when the user prompt looks read-only (a question/explanation) or the developer emitted `CCR_REVIEW: skip`; `advisory` only logs what it would do (to `ccr-events`); `off` disables it. It is **suppress-only** — it never starts a review on its own (a real diff is still required), and an explicit `CCR_REVIEW: request` line overrides a read-only classification.
+
+The developer agent can end a turn with one plain-text line — `CCR_REVIEW: request` or `CCR_REVIEW: skip` — to tell CCR whether the turn warrants an automatic review; omitting it falls back to the file-change heuristic. This is separate from the reviewer's `REVIEW_DECISION:` line.
 
 Example:
 

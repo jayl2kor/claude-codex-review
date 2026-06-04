@@ -93,7 +93,8 @@ It checks:
 - collected diff has content,
 - diff meets `CCR_MIN_DIFF_LINES`,
 - diff hash differs from the last reviewed diff,
-- `ccr-skip-next` is not pending.
+- `ccr-skip-next` is not pending,
+- the prompt gate does not suppress it (`CCR_PROMPT_GATE=on`): the developer did not emit `CCR_REVIEW: skip`, and (when no `CCR_REVIEW: request` overrides) the user prompt was not classified read-only. This step is suppress-only — it can drop an otherwise-eligible review but never starts one.
 
 If eligible, it writes round artifacts and sends a handoff message to the opposite cmux surface.
 

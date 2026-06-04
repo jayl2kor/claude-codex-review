@@ -97,10 +97,12 @@ const CHOICES: Partial<Record<keyof CcrArgs, string[]>> = {
 /** Python `int(str)` for argparse type=int: whole-string signed integer, else error. */
 function parseInt10(value: string, flag: string): number {
   const t = value.trim();
-  if (!/^[+-]?\d+$/.test(t)) {
+  // Python int() accepts single underscores strictly between digits ("1_000"),
+  // and rejects leading/trailing/doubled ones ("_1", "1_", "1__0").
+  if (!/^[+-]?\d+(_\d+)*$/.test(t)) {
     throw new ArgError(`argument ${flag}: invalid int value: '${value}'`);
   }
-  return Number.parseInt(t, 10);
+  return Number.parseInt(t.replace(/_/g, ""), 10);
 }
 
 function checkChoice(dest: keyof CcrArgs, value: string, flag: string): void {
@@ -132,7 +134,10 @@ export function parseArgs(argv: string[]): CcrArgs {
         return inlineVal;
       }
       const v = argv[i + 1];
-      if (v === undefined) {
+      // argparse treats an option-like next token as a MISSING value rather than
+      // silently consuming it (so `--title --use-diff` errors instead of setting
+      // title="--use-diff"). A lone "-" and negative numbers stay valid values.
+      if (v === undefined || (v.length > 1 && v.startsWith("-") && !/^-\d+$/.test(v))) {
         throw new ArgError(`argument ${flag}: expected one argument`);
       }
       i++;

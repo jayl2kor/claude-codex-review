@@ -143,6 +143,7 @@ CCR is designed to reduce same-worktree conflicts:
 - Diff collection excludes `.cmux/ccr/`, `.git/`, `.env*`, private key/certificate suffixes, build output folders, dependency folders, and `.open-research/logs/`.
 - Large untracked files and combined diffs are bounded by `CCR_MAX_UNTRACKED_BYTES` and `CCR_MAX_DIFF_BYTES`.
 - Small automatic reviews can be skipped with `CCR_MIN_DIFF_LINES`.
+- Read-only prompts (questions/explanations) and developer `CCR_REVIEW: skip` verdicts suppress the automatic review when `CCR_PROMPT_GATE` is `on` (default); this is suppress-only and never starts a review by itself.
 
 For payload handling, support bundle sharing, retention, and `NEEDS_HUMAN` policy, read [`security.md`](security.md).
 
@@ -155,6 +156,7 @@ For payload handling, support bundle sharing, retention, and `NEEDS_HUMAN` polic
 | `CCR_MAX_UNTRACKED_BYTES` | `200000` | Maximum untracked text file size included in review diffs. |
 | `CCR_MAX_DIFF_BYTES` | `300000` | Maximum combined diff payload size sent to reviewer. |
 | `CCR_MIN_DIFF_LINES` | `0` | If greater than zero, skip automatic review below this changed-line count. |
+| `CCR_PROMPT_GATE` | `on` | Prompt-based suppression of automatic reviews (`on`/`advisory`/`off`). Suppress-only; honors `CCR_REVIEW: skip`/`request`. |
 
 ## Where To Start
 

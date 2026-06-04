@@ -22,7 +22,9 @@ export function commandCancel(): number {
   let cancelledActive: Record<string, unknown> | null = null;
   lockedState(root, (state) => {
     const active = state.active_request;
-    if (isPlainObject(active)) {
+    // Mirror Python's falsy-empty-dict semantics: an empty {} counts as "no
+    // active request", so the report/output below take the else branch.
+    if (isPlainObject(active) && Object.keys(active).length > 0) {
       cancelledActive = { ...active };
     }
     state.active_request = null;

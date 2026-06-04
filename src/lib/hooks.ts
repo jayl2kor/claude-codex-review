@@ -20,15 +20,16 @@ import { isAbsolute, join } from "node:path";
 
 import { getOrNull, now, appendJsonl } from "./io";
 import { rootForCwd, sessionContextPath } from "./paths";
-import { lockedState, writeStatus, ensureSession, markDirty, clearDirty } from "./lock";
+import { lockedState, writeStatus, ensureSession, markDirty, clearDirty, writePromptGate, clearPromptGate } from "./lock";
 import { cmuxLog, cmuxStatus, roleForCurrentSurface, workspaceEnabled } from "./cmux";
 import { toolName, toolCommand, bashLooksMutating, shouldMarkDirtyForTool } from "./tool";
 import { reviewerBlockResponse } from "./misc";
 import { reapStaleActive, startReview, finishReview } from "./review";
 import { captureSessionContext } from "./session";
 import { isCcrHandoffPrompt } from "./intent";
+import { promptWantsReview } from "./promptgate";
 import { insideGit, git } from "./git";
-import { MUTATING_TOOL_NAMES } from "./constants";
+import { MUTATING_TOOL_NAMES, promptGateMode } from "./constants";
 import { strip } from "./pycompat";
 
 type HookResult = Record<string, unknown> | null;
@@ -84,6 +85,9 @@ export function handleUserPromptSubmit(
   if (isCcrHandoffPrompt(prompt)) {
     if (sid) {
       clearDirty(root, sid);
+      // A handoff prompt must never influence the gate: clear any stale marker
+      // and write none (it returns before classification below).
+      clearPromptGate(root, sid);
     }
     cmuxLog("progress", "UserPromptSubmit: CCR handoff received; cleared receiver dirty marker");
     return;
@@ -92,6 +96,10 @@ export function handleUserPromptSubmit(
     cmuxLog("progress", "UserPromptSubmit ignored while review is active");
     return;
   }
+  // Classify this turn's prompt for the suppress-only review gate (CCR_PROMPT_GATE).
+  // Per-turn marker, consumed+cleared at the worker Stop (mirrors dirty.json).
+  const gateOn = promptGateMode() !== "off";
+  const promptWants = gateOn && sid ? promptWantsReview(prompt) : null;
   const prevCount = Math.trunc(
     Number((Object.prototype.hasOwnProperty.call(state, "review_count") ? state.review_count : 0) || 0),
   );
@@ -99,12 +107,18 @@ export function handleUserPromptSubmit(
     if (sid && prompt && !isFile(sessionContextPath(root, sid))) {
       captureSessionContext(root, sid, prompt);
     }
+    if (gateOn && sid) {
+      writePromptGate(root, sid, promptWants, prompt.slice(0, 120));
+    }
     return;
   }
   state.review_count = 0;
   state.last_diff_hash = "";
   if (sid && prompt) {
     captureSessionContext(root, sid, prompt);
+  }
+  if (gateOn && sid) {
+    writePromptGate(root, sid, promptWants, prompt.slice(0, 120));
   }
   writeStatus(root, state, "ready", `new ${role} request (round counter reset)`);
   cmuxStatus("CCR ready", "#34C759");

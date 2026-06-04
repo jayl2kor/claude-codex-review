@@ -10,7 +10,7 @@
  */
 
 import { splitlines, strip, rstrip, lstrip } from "./pycompat";
-import { DECISION_RE, MUST_FIX_SENTINELS } from "./constants";
+import { DECISION_RE, MUST_FIX_SENTINELS, REVIEW_VERDICT_RE } from "./constants";
 
 /**
  * Parse a review message and return the decision token.
@@ -42,6 +42,40 @@ export function parseDecision(message: string): string {
     }
   }
   return "INVALID";
+}
+
+/**
+ * Parse a worker's final message for an agent-emitted CCR review verdict.
+ *
+ * Uses the SAME fenced-code/blockquote-aware scan as parseDecision (toggle a
+ * fenced state on a left-stripped "```"/"~~~", skip in-fence and blockquote
+ * lines), matching REVIEW_VERDICT_RE. Two deliberate differences from
+ * parseDecision: returns the LAST match (a later line corrects an earlier
+ * draft) and returns null when absent (so the caller can distinguish "no
+ * verdict emitted" -> fall back to the prompt heuristic, from an explicit
+ * token). Returns "request" | "skip" | null.
+ */
+export function parseReviewVerdict(message: string): "request" | "skip" | null {
+  let inFence = false;
+  let verdict: "request" | "skip" | null = null;
+  for (const raw of splitlines(message || "")) {
+    const stripped = lstrip(raw);
+    if (stripped.startsWith("```") || stripped.startsWith("~~~")) {
+      inFence = !inFence;
+      continue;
+    }
+    if (inFence) {
+      continue;
+    }
+    if (stripped.startsWith(">")) {
+      continue;
+    }
+    const m = REVIEW_VERDICT_RE.exec(raw);
+    if (m) {
+      verdict = m[1].toLowerCase() as "request" | "skip";
+    }
+  }
+  return verdict;
 }
 
 /**

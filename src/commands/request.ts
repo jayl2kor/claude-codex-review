@@ -60,6 +60,22 @@ export function commandRequest(args: CcrArgs): number {
     err(`No registered ${reviewer} surface. Run cmux-setup-${reviewer} in that terminal.`);
     return 1;
   }
+  // Self-routing guard: a review must go to the *other* agent, never loop back
+  // to the worker. `--reviewer auto` already picks the opposite role, but an
+  // explicit `--reviewer <same>` or a mis-registered surface (both
+  // claude-surface and codex-surface pointing at this terminal) would otherwise
+  // send the request to ourselves.
+  if (isAgentRole(worker) && reviewer === worker) {
+    err(`Refusing to route a review back to the worker (${worker}). Use --reviewer auto or the opposite agent.`);
+    return 1;
+  }
+  if (reviewerSurface === workerSurface) {
+    err(
+      `Reviewer surface equals the worker surface (${reviewerSurface}); the review would loop back to this terminal. ` +
+        `Check cmux-setup-claude / cmux-setup-codex registration.`,
+    );
+    return 1;
+  }
 
   mkdirSync(root, { recursive: true });
   let rc = 0;

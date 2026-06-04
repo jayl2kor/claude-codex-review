@@ -154,8 +154,16 @@ export function collectDiff(
   }
   const [, head] = git(cwd, ["rev-parse", "--short", "HEAD"]);
   const pathspecs = diffPathspecs();
-  const [, staged] = git(cwd, ["diff", "--cached", "--no-ext-diff", "--no-textconv", "--", ...pathspecs]);
-  const [, unstaged] = git(cwd, ["diff", "--no-ext-diff", "--no-textconv", "--", ...pathspecs]);
+  const [stagedCode, staged] = git(cwd, ["diff", "--cached", "--no-ext-diff", "--no-textconv", "--", ...pathspecs]);
+  const [unstagedCode, unstaged] = git(cwd, ["diff", "--no-ext-diff", "--no-textconv", "--", ...pathspecs]);
+  // A spawn-level failure — git missing, or stdout exceeding GIT_MAX_BUFFER
+  // (ENOBUFS, surfaced by git() as status === null -> -1) — yields TRUNCATED
+  // stdout. Hashing/reviewing a truncated diff as if it were complete is worse
+  // than skipping: bail so the round is a no-op instead of emitting a wrong-hash
+  // or partial review. (git diff has no positive non-zero "success" code here.)
+  if (stagedCode < 0 || unstagedCode < 0) {
+    return ["", "", "", false, 0, []];
+  }
   const untracked = readUntrackedPatch(cwd);
   const sections: Array<[string, string]> = [
     ["# Git HEAD", strip(head) || "unknown"],

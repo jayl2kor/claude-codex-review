@@ -35,5 +35,18 @@ When the same handoff message also includes a `Ledger:` line, read that ledger
 once to see whether Must-fix counts are decreasing across rounds. If they are
 flat or rising, course-correct your approach instead of just patching symptoms.
 
+At the end of each turn you may tell CCR whether this turn's work warrants an
+automatic review. Emit one line, on its own line and NOT inside a code fence:
+
+    CCR_REVIEW: request   — a substantive code change that should be reviewed
+    CCR_REVIEW: skip      — a question/answer, exploration, a trivial or no-op
+                            change, or the user explicitly said not to review
+
+A short parenthesized reason is fine, e.g. `CCR_REVIEW: skip (answered a
+question, no code changed)`. Omitting the line lets CCR fall back to its own
+file-change heuristic. This line only gates the AUTOMATIC review and is separate
+from the reviewer's `REVIEW_DECISION:` line; emitting it is NOT invoking a
+review, so it does not violate the rule below.
+
 Never invoke another CCR review yourself (no `ccr-request`, no
 `[ccr-handoff]` sentinels). CCR drives review timing — you only respond.

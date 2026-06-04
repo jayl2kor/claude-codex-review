@@ -15,11 +15,12 @@ import { readFileSync, writeFileSync, statSync, unlinkSync, mkdirSync } from "no
 import { join } from "node:path";
 
 import { loadJson, writeJson, now, appendJsonl } from "./io";
-import { countMustFixInText, parseDecision } from "./decision";
+import { countMustFixInText, parseDecision, parseReviewVerdict } from "./decision";
 import { sessionDir, sessionLedgerPath, skipMarkerPath } from "./paths";
-import { writeStatus, clearDirty, hasDirty } from "./lock";
+import { writeStatus, clearDirty, hasDirty, readPromptGate, clearPromptGate } from "./lock";
 import { cmuxLog, cmuxStatus, cmuxNotify, sendToSurface, surfaceForRole } from "./cmux";
-import { MAX_ROUNDS, MIN_DIFF_LINES, STALE_ACTIVE_SECONDS } from "./constants";
+import { MAX_ROUNDS, MIN_DIFF_LINES, STALE_ACTIVE_SECONDS, promptGateMode } from "./constants";
+import { suppressReason } from "./promptgate";
 import { opposite } from "./text";
 import { collectDiff, computeDeltaPatch } from "./git";
 import { requestMarkdown } from "./request";
@@ -320,6 +321,39 @@ export function startReview(
       by_surface: Object.prototype.hasOwnProperty.call(marker, "by_surface") ? marker.by_surface : "",
     });
     return;
+  }
+
+  // Prompt-based gate (CCR_PROMPT_GATE), suppress-only: an agent CCR_REVIEW:skip
+  // verdict, or a read-only-classified prompt with no overriding verdict, drops
+  // this otherwise-eligible review. Placed last so the deterministic diff gates
+  // (no-diff / min-lines / same-hash / ccr-skip-next) keep precedence and their
+  // own reasons; this only matters when there IS a genuine, novel diff.
+  const gateMode = promptGateMode();
+  if (gateMode !== "off") {
+    const verdict = parseReviewVerdict(String((inputData.last_assistant_message as unknown) || ""));
+    const promptWants = readPromptGate(root, sid);
+    clearPromptGate(root, sid); // per-turn marker: always consume
+    const reason = suppressReason(verdict, promptWants);
+    if (gateMode === "advisory") {
+      appendJsonl(join(root, "events.jsonl"), {
+        at: now(),
+        type: "review_gate_advisory",
+        reason: reason ?? "proceed",
+        session_id: sid,
+      });
+    } else if (reason) {
+      clearDirty(root, sid);
+      writeStatus(root, state, "skipped", reason);
+      cmuxStatus("CCR skipped", "#8E8E93");
+      cmuxLog("progress", `prompt gate: ${reason}; outgoing review suppressed`);
+      appendJsonl(join(root, "events.jsonl"), {
+        at: now(),
+        type: "skipped",
+        reason,
+        session_id: sid,
+      });
+      return;
+    }
   }
 
   const roundNo = reviewCount(state) + 1;

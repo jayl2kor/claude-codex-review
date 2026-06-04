@@ -10,6 +10,11 @@ You play two roles depending on context.
    or include a labelled `PURPOSE: / NON_GOAL: / INVARIANT:` block in your
    final assistant turn so CCR can auto-extract it. Never invoke another CCR
    review yourself.
+   At the end of a dev turn you may also emit one plain-text line
+   `CCR_REVIEW: request` or `CCR_REVIEW: skip` (never inside a code fence) to
+   tell CCR whether this turn warrants an automatic review; omitting it falls
+   back to CCR's file-change heuristic. This is separate from the reviewer's
+   `REVIEW_DECISION:` line and is not itself a review invocation.
 
 2. Reviewer (when CCR hands you a request.md path).
    Strict constraints:

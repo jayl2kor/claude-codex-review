@@ -19,8 +19,8 @@ import { handleUserPromptSubmit } from "../lib/hooks";
 import { truncateSections } from "../lib/text";
 import { countChangedLines } from "../lib/diff";
 import { loadSessionIntent } from "../lib/session";
-import { markDirty, hasDirty } from "../lib/lock";
-import { reapStaleActive } from "../lib/review";
+import { markDirty, hasDirty, writePromptGate } from "../lib/lock";
+import { reapStaleActive, startReview } from "../lib/review";
 import { appendJsonl, writeJson, now } from "../lib/io";
 import { sessionDir, sessionIntentPath, skipMarkerPath, rootForCwd } from "../lib/paths";
 import { MAX_ROUNDS, MAX_DIFF_BYTES } from "../lib/constants";
@@ -340,9 +340,49 @@ function cases(): Array<[string, () => void]> {
     }
   };
 
+  const promptReviewGate = (): void => {
+    const td = tmp();
+    const oldEnv = process.env.CCR_PROMPT_GATE;
+    try {
+      process.env.CCR_PROMPT_GATE = "on";
+      const root = join(td, "ccr");
+      mkdirSync(root, { recursive: true });
+      const repo = join(td, "repo");
+      mkdirSync(repo, { recursive: true });
+      spawnSync("sh", ["-c", "git init -q && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m i >/dev/null 2>&1"], { cwd: repo });
+      writeFileSync(join(repo, "x.txt"), "hello\nworld\n", "utf-8");
+      const sid = "sid-gate";
+
+      // (1) agent verdict CCR_REVIEW: skip suppresses an otherwise-eligible review.
+      markDirty(root, { session_id: sid, hook_event_name: "PostToolUse" }, "claude", "claude");
+      assert(hasDirty(root, sid) === true);
+      const s1: Record<string, unknown> = {};
+      startReview(root, s1, { session_id: sid, cwd: repo, last_assistant_message: "done\nCCR_REVIEW: skip" }, "claude");
+      assert(!s1.active_request, "agent verdict skip should suppress (no active_request)");
+      assert(!existsSync(join(sessionDir(root, sid), "rounds", "0001")), "no round dir on verdict-skip");
+      assert(readEvents(root, 5).some((e) => e.reason === "agent_verdict_skip"), "skip event logged");
+
+      // (2) a read-only-classified prompt (no verdict) suppresses too.
+      markDirty(root, { session_id: sid, hook_event_name: "PostToolUse" }, "claude", "claude");
+      writePromptGate(root, sid, false, "what does x do?");
+      const s2: Record<string, unknown> = {};
+      startReview(root, s2, { session_id: sid, cwd: repo, last_assistant_message: "here is the answer" }, "claude");
+      assert(!s2.active_request, "read-only prompt should suppress");
+      assert(readEvents(root, 5).some((e) => e.reason === "prompt_gate_readonly"), "prompt_gate_readonly event logged");
+    } finally {
+      if (oldEnv === undefined) {
+        delete process.env.CCR_PROMPT_GATE;
+      } else {
+        process.env.CCR_PROMPT_GATE = oldEnv;
+      }
+      rmSync(td, { recursive: true, force: true });
+    }
+  };
+
   return [
     ["decision parser", decisionParser],
     ["dirty filter", dirtyFilter],
+    ["prompt review gate", promptReviewGate],
     ["handoff and prompt reset safety", handoffAndPrompt],
     ["diff truncation helpers", truncationAndDiff],
     ["doctor/ready/support JSON smoke", doctorReadySupportJson],

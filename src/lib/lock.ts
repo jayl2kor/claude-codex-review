@@ -57,7 +57,7 @@ import { randomBytes } from "node:crypto";
 
 import { loadJson, writeJson, appendJsonl, now, getOrNull, writeAllSync } from "./io";
 import { defaultState } from "./misc";
-import { sessionDir, workspaceId, surfaceId } from "./paths";
+import { sessionDir, workspaceId, surfaceId, promptGatePath } from "./paths";
 import { toolName } from "./tool";
 
 // Per-process counter contributing to unique lock-token nonces.
@@ -426,6 +426,50 @@ export function clearDirty(root: string, sessionId: string): void {
 /** Python `has_dirty` (799-800): does dirty.json exist? */
 export function hasDirty(root: string, sessionId: string): boolean {
   return existsSync(join(sessionDir(root, sessionId), "dirty.json"));
+}
+
+/**
+ * Per-turn prompt-gate marker (CCR_PROMPT_GATE), lifecycle modeled on dirty.json:
+ * written at UserPromptSubmit, consumed+cleared at the worker Stop. `wantsReview`
+ * is the promptWantsReview() classification (true/false/null). promptHead keeps a
+ * short prefix for debuggability (mirrors the dirty marker's diagnostic fields).
+ */
+export function writePromptGate(
+  root: string,
+  sessionId: string,
+  wantsReview: boolean | null,
+  promptHead = "",
+): void {
+  if (!sessionId) {
+    return;
+  }
+  writeJson(promptGatePath(root, sessionId), {
+    at: now(),
+    wants_review: wantsReview,
+    prompt_head: promptHead,
+  });
+}
+
+/**
+ * Read the prompt-gate verdict: true/false from the marker, or null when the
+ * file is absent or unparseable / lacks a boolean wants_review (so the caller
+ * treats "no signal" as defer-to-diff-gates).
+ */
+export function readPromptGate(root: string, sessionId: string): boolean | null {
+  const doc = loadJson<Record<string, unknown>>(promptGatePath(root, sessionId), {});
+  const wants = getOrNull(doc, "wants_review");
+  return typeof wants === "boolean" ? wants : null;
+}
+
+/** Unlink the prompt-gate marker, ignoring absence (mirrors clearDirty). */
+export function clearPromptGate(root: string, sessionId: string): void {
+  try {
+    unlinkSync(promptGatePath(root, sessionId));
+  } catch (err) {
+    if (!isErrno(err, "ENOENT")) {
+      throw err;
+    }
+  }
 }
 
 /**

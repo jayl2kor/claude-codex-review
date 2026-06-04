@@ -8,7 +8,7 @@ import { rootForCwd, workspaceId, surfaceId, CONFIG_ROOT, ENABLED_FILE } from ".
 import {
   MAX_ROUNDS, MAX_UNTRACKED_BYTES, MAX_DIFF_BYTES, MIN_DIFF_LINES, STALE_ACTIVE_SECONDS,
   CCR_DEFAULTS, RUNTIME_COMMANDS, GENERATED_BIN_NAMES, GENERATED_CLAUDE_COMMAND_FILES,
-  SENSITIVE_SUFFIXES, SENSITIVE_BASENAMES,
+  SENSITIVE_SUFFIXES, SENSITIVE_BASENAMES, promptGateMode,
 } from "../lib/constants";
 import { cpCompare } from "../lib/pycompat";
 import type { CcrArgs } from "../lib/args";
@@ -27,6 +27,7 @@ export function configDoc(cwd: string): Record<string, unknown> {
     CCR_MAX_DIFF_BYTES: String(MAX_DIFF_BYTES),
     CCR_MIN_DIFF_LINES: String(MIN_DIFF_LINES),
     CCR_STALE_ACTIVE_SECONDS: String(STALE_ACTIVE_SECONDS),
+    CCR_PROMPT_GATE: promptGateMode(),
     CCR_ROOT: root,
   };
   const env: Record<string, Record<string, string>> = {};

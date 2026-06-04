@@ -70,3 +70,8 @@ export function sessionLedgerPath(root: string, sessionId: string): string {
 export function skipMarkerPath(root: string): string {
   return join(root, "skip-next.json");
 }
+
+/** Per-turn prompt-gate marker: session_dir/prompt-gate.json (CCR_PROMPT_GATE). */
+export function promptGatePath(root: string, sessionId: string): string {
+  return join(sessionDir(root, sessionId), "prompt-gate.json");
+}

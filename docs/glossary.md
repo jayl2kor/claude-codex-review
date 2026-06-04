@@ -34,7 +34,7 @@ Common values shown by `ccr-status`, reports, or events:
 | `changes_requested` | The reviewer returned `NEEDS_CHANGES`; the worker should apply valid feedback. |
 | `passed` | The reviewer returned `PASS`. |
 | `manual_intervention` | A human or manual workflow is required, usually for `NEEDS_HUMAN` or an invalid decision. |
-| `skipped` | CCR intentionally skipped a review, often because of `ccr-skip-next` or `CCR_MIN_DIFF_LINES`. |
+| `skipped` | CCR intentionally skipped a review — e.g. `ccr-skip-next`, `CCR_MIN_DIFF_LINES`, or the prompt gate (`CCR_PROMPT_GATE`: a read-only prompt or a developer `CCR_REVIEW: skip` verdict). |
 
 ## Artifact Names
 
