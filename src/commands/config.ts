@@ -19,7 +19,7 @@ const EXCLUDED_PATHS = [
   ".next/", ".venv/", "DerivedData/", ".open-research/logs/",
 ];
 
-function configDoc(cwd: string): Record<string, unknown> {
+export function configDoc(cwd: string): Record<string, unknown> {
   const root = rootForCwd(cwd);
   const values: Record<string, string> = {
     CCR_MAX_ROUNDS: String(MAX_ROUNDS),

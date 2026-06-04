@@ -19,7 +19,7 @@ function isFile(p: string): boolean {
   }
 }
 
-function readEvents(root: string, limit: number): Record<string, unknown>[] {
+export function readEvents(root: string, limit: number): Record<string, unknown>[] {
   const eventsPath = join(root, "events.jsonl");
   if (!isFile(eventsPath)) {
     return [];

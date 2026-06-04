@@ -49,7 +49,7 @@ function byMtimeDesc(dir: string, pred: (name: string, full: string) => boolean)
     .map((x) => x.full);
 }
 
-function pruneCandidates(root: string, keep: number, days: number): Candidate[] {
+export function pruneCandidates(root: string, keep: number, days: number): Candidate[] {
   const nowTs = Date.now() / 1000;
   const cutoff = days && days > 0 ? nowTs - days * 86400 : null;
   const candidates: Candidate[] = [];

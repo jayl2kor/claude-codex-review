@@ -1,0 +1,177 @@
+/**
+ * doctor.ts — `ccr-doctor`. Faithful port of ccr-hook.py command_doctor
+ * (2881-3044): inspect the install (PATH, generated bins, Claude/Codex hook
+ * registration), the cmux surface/role wiring, and the CCR runtime root, then
+ * print a status table (or --json) with next-step actions. Exit 1 on any fail.
+ */
+import { join, delimiter } from "node:path";
+import { existsSync } from "node:fs";
+
+import { loadJson } from "../lib/io";
+import { rootForCwd, skipMarkerPath, workspaceId, surfaceId } from "../lib/paths";
+import { workspaceEnabled, surfaceForRole, roleForCurrentSurface } from "../lib/cmux";
+import { insideGit } from "../lib/git";
+import { formatDuration } from "../lib/text";
+import { doctorNextMessage, doctorActionItems } from "../lib/misc";
+import { RUNTIME_COMMANDS, GENERATED_BIN_NAMES } from "../lib/constants";
+import { ljust } from "../lib/pycompat";
+import { which, isExecutable, jsonFileContains, installLayout } from "./diag";
+import { out, g, isPlainObject, utcEpochSeconds, nowEpochSeconds } from "./shared";
+
+export interface DoctorRow {
+  status: string;
+  name: string;
+  detail: string;
+}
+
+/** Build the doctor rows (shared with command_check via the json doc). */
+export function doctorRows(cwd: string): DoctorRow[] {
+  const { binRoot, claudeSettings, codexHooks } = installLayout();
+  const root = rootForCwd(cwd);
+  const rows: DoctorRow[] = [];
+  const add = (status: string, name: string, detail = ""): void => {
+    rows.push({ status, name, detail });
+  };
+
+  for (const name of ["python3", ...RUNTIME_COMMANDS]) {
+    const found = which(name);
+    add(found ? "ok" : "fail", `command: ${name}`, found || "not found in PATH");
+  }
+
+  const pathEntries = (process.env.PATH ?? "").split(delimiter);
+  const onPath = pathEntries.includes(binRoot);
+  add(onPath ? "ok" : "warn", "PATH", `${binRoot} ${onPath ? "is in PATH" : "is not in PATH for this shell"}`);
+
+  const missingGenerated = GENERATED_BIN_NAMES.filter((name) => !isExecutable(join(binRoot, name)));
+  add(
+    missingGenerated.length === 0 ? "ok" : "fail",
+    "installed command files",
+    missingGenerated.length === 0 ? "all generated commands are executable" : "missing/not executable: " + missingGenerated.join(", "),
+  );
+
+  const claudeHook = join(binRoot, "ccr-hook-claude");
+  const codexHook = join(binRoot, "ccr-hook-codex");
+  const claudeHasHook = jsonFileContains(claudeSettings, claudeHook);
+  const codexHasHook = jsonFileContains(codexHooks, codexHook);
+  add(
+    claudeHasHook ? "ok" : "fail",
+    "Claude hooks",
+    claudeHasHook
+      ? `${claudeSettings} contains ${claudeHook}`
+      : existsSync(claudeSettings) ? `${claudeSettings} missing CCR hook entry` : `${claudeSettings} not found`,
+  );
+  add(
+    codexHasHook ? "ok" : "fail",
+    "Codex hooks",
+    codexHasHook
+      ? `${codexHooks} contains ${codexHook}`
+      : existsSync(codexHooks) ? `${codexHooks} missing CCR hook entry` : `${codexHooks} not found`,
+  );
+
+  const wid = workspaceId();
+  const sid = surfaceId();
+  add(wid && sid ? "ok" : "warn", "cmux surface", wid && sid ? `workspace=${wid} surface=${sid}` : "not running inside a cmux surface");
+
+  const role = roleForCurrentSurface();
+  const roleKnown = role === "claude" || role === "codex";
+  add(roleKnown ? "ok" : "warn", "registered current surface", roleKnown ? role : "run cmux-setup-claude or cmux-setup-codex in this surface");
+
+  const claudeSurface = surfaceForRole("claude");
+  const codexSurface = surfaceForRole("codex");
+  add(claudeSurface ? "ok" : "warn", "registered Claude surface", claudeSurface || "not registered");
+  add(codexSurface ? "ok" : "warn", "registered Codex surface", codexSurface || "not registered");
+
+  add(workspaceEnabled() ? "ok" : "warn", "workspace enabled", workspaceEnabled() ? "enabled" : "run ccr-enable inside the target repo");
+
+  add(insideGit(cwd) ? "ok" : "warn", "git repository", insideGit(cwd) ? cwd : "current directory is not inside a git worktree");
+
+  const statusDoc = loadJson<Record<string, unknown>>(join(root, "status.json"), {});
+  const stateDoc = loadJson<Record<string, unknown>>(join(root, "state.json"), {});
+  if (existsSync(root)) {
+    const reason = isPlainObject(statusDoc) ? String(g(statusDoc, "reason", null) || "") : "";
+    add("ok", "CCR runtime root", `${root} (${reason || "state exists"})`);
+  } else {
+    add("warn", "CCR runtime root", `${root} not found; run ccr-enable`);
+  }
+
+  const active = isPlainObject(stateDoc) ? stateDoc.active_request : null;
+  if (isPlainObject(active)) {
+    let elapsed = "";
+    const created = g(active, "created_at", null);
+    if (created) {
+      const ep = utcEpochSeconds(String(created));
+      if (ep !== null) {
+        const elapsedSecs = Math.max(0, Math.trunc(nowEpochSeconds() - ep));
+        elapsed = `, elapsed=${formatDuration(elapsedSecs)}`;
+      }
+    }
+    add("warn", "active request", `round ${g(active, "round", "?")} ${g(active, "worker", "?")}->${g(active, "reviewer", "?")}${elapsed}; use ccr-status or ccr-cancel if stale`);
+  } else {
+    add("ok", "active request", "none");
+  }
+
+  const skip = skipMarkerPath(root);
+  add(existsSync(skip) ? "warn" : "ok", "skip-next marker", existsSync(skip) ? skip : "none");
+
+  return rows;
+}
+
+/** Build the doctor JSON doc + exit code (shared with command_check). */
+export function doctorDoc(cwd: string): { code: number; doc: Record<string, unknown> } {
+  const root = rootForCwd(cwd);
+  const rows = doctorRows(cwd);
+  const failCount = rows.filter((r) => r.status === "fail").length;
+  const warnCount = rows.filter((r) => r.status === "warn").length;
+  const okCount = rows.filter((r) => r.status === "ok").length;
+  const doc: Record<string, unknown> = {
+    version: 1,
+    cwd,
+    ccr_root: root,
+    summary: { fail: failCount, warn: warnCount, ok: okCount },
+    checks: rows,
+    next: doctorNextMessage(failCount, warnCount),
+    actions: doctorActionItems(rows),
+  };
+  return { code: failCount ? 1 : 0, doc };
+}
+
+export function commandDoctor(jsonOutput: boolean): number {
+  const cwd = process.cwd();
+  const root = rootForCwd(cwd);
+  const rows = doctorRows(cwd);
+  const failCount = rows.filter((r) => r.status === "fail").length;
+  const warnCount = rows.filter((r) => r.status === "warn").length;
+  const okCount = rows.filter((r) => r.status === "ok").length;
+  const nextMessage = doctorNextMessage(failCount, warnCount);
+  const actions = doctorActionItems(rows);
+
+  if (jsonOutput) {
+    out(JSON.stringify({
+      version: 1,
+      cwd,
+      ccr_root: root,
+      summary: { fail: failCount, warn: warnCount, ok: okCount },
+      checks: rows,
+      next: nextMessage,
+      actions,
+    }, null, 2));
+    return failCount ? 1 : 0;
+  }
+
+  out("CCR Doctor");
+  out(`Cwd: ${cwd}`);
+  out(`CCR root: ${root}`);
+  out();
+  for (const row of rows) {
+    out(`[${ljust(row.status.toUpperCase(), 4)}] ${ljust(row.name, 28)} ${row.detail}`);
+  }
+  out();
+  out(`Summary: ${failCount} fail, ${warnCount} warn`);
+  out(`Next: ${nextMessage}`);
+  out();
+  out("Next actions:");
+  actions.forEach((action, i) => {
+    out(`${i + 1}. ${action}`);
+  });
+  return failCount ? 1 : 0;
+}

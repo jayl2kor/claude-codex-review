@@ -30,6 +30,12 @@ import { commandCancel } from "./commands/cancel";
 import { commandSkipNext } from "./commands/skipNext";
 import { commandPrune } from "./commands/prune";
 import { commandRequest } from "./commands/request";
+import { commandDoctor } from "./commands/doctor";
+import { commandCheck } from "./commands/check";
+import { commandSupport } from "./commands/support";
+import { commandReady } from "./commands/ready";
+import { commandSelftest } from "./commands/selftest";
+import { commandUninstall } from "./commands/uninstall";
 
 function dispatchCommand(command: string, args: CcrArgs): number {
   switch (command) {
@@ -61,9 +67,22 @@ function dispatchCommand(command: string, args: CcrArgs): number {
       return commandPrune(args);
     case "request":
       return commandRequest(args);
+    case "doctor":
+      return commandDoctor(args.json_output);
+    case "check":
+      return commandCheck(args.json_output);
+    case "support":
+      return commandSupport(args);
+    case "ready":
+      return commandReady(args.json_output);
+    case "selftest":
+      return commandSelftest(args.json_output);
+    case "uninstall":
+      return commandUninstall(args);
     default:
-      // ready (5c follow-on) + doctor/check/support/selftest/uninstall (5d).
-      throw new Error(`ccr command not yet ported to the Bun CLI: ${command}`);
+      // All 20 commands are ported; an unknown --command should be impossible
+      // (argparse choices reject it), but keep a guard for safety.
+      throw new Error(`unknown ccr command: ${command}`);
   }
 }
 

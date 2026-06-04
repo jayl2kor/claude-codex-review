@@ -41,3 +41,25 @@ export function utcEpochSeconds(stamp: string): number | null {
 export function nowEpochSeconds(): number {
   return Date.now() / 1000;
 }
+
+/**
+ * Run `fn` with process.stdout.write captured, returning what it wrote. Mirrors
+ * Python `contextlib.redirect_stdout(io.StringIO())` — used by the selftest's
+ * doctor/ready/support smoke case, which inspects those commands' stdout.
+ */
+export function captureStdout(fn: () => void): string {
+  const chunks: string[] = [];
+  const original = process.stdout.write.bind(process.stdout);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (process.stdout as any).write = (chunk: any): boolean => {
+    chunks.push(typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf-8"));
+    return true;
+  };
+  try {
+    fn();
+  } finally {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (process.stdout as any).write = original;
+  }
+  return chunks.join("");
+}

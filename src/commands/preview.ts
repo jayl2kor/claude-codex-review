@@ -42,7 +42,7 @@ interface PreviewData {
   notes: string[];
 }
 
-function previewData(cwd: string, root: string): PreviewData {
+export function previewData(cwd: string, root: string): PreviewData {
   let state = loadJson<unknown>(join(root, "state.json"), defaultState());
   if (!isPlainObject(state)) {
     state = defaultState();
