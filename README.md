@@ -82,7 +82,7 @@ When the working agent changes files and finishes a turn, CCR creates a review r
 <project>/.cmux/ccr/sessions/<session-id>/rounds/<round>/
 ```
 
-CCR only marks a turn as reviewable after file-mutating tools (`Edit`, `Write`, `MultiEdit`, `NotebookEdit`, `apply_patch`) or Bash commands that look like they modify files. Read-only commands and CCR control commands such as `ccr-status` or `ccr-reset` do not start a review by themselves, even if an older git diff already exists.
+CCR only marks a turn as reviewable after file-mutating tools (`Edit`, `Write`, `MultiEdit`, `NotebookEdit`, `apply_patch`) or Bash commands that look like they modify files. Read-only commands and CCR control commands such as `ccr-status` or `ccr-reset` do not start a review by themselves, even if an older git diff already exists. Read-only output redirects (`2>/dev/null`, `2>&1`, `>/dev/null`) are not treated as mutating, so an investigative turn that only runs such commands will not arm a review.
 
 Important files:
 
@@ -279,7 +279,7 @@ Supported request types:
 
 Useful options:
 
-- `--reviewer claude|codex`: explicitly choose the reviewer. Defaults to the opposite registered surface.
+- `--reviewer claude|codex`: explicitly choose the reviewer. Defaults to the opposite registered surface. A request that would route back to the worker itself (same role, or a reviewer surface equal to the worker surface) is refused, so a mis-registered pair or an explicit self-target fails fast instead of looping a review back to you.
 - `--file <path>`: add a file to the review scope. Repeatable.
 - `--dir <path>`: add a directory to the review scope. Repeatable.
 - `--question <text>`: add a concrete review question. Repeatable.
@@ -295,7 +295,7 @@ Environment variables:
 - `CCR_MAX_UNTRACKED_BYTES`: max untracked text file size included in review diffs. Default: `200000`.
 - `CCR_MAX_DIFF_BYTES`: max combined diff size sent to the reviewer. Sections are truncated from the end (untracked first) when over budget. Default: `300000`.
 - `CCR_MIN_DIFF_LINES`: if `>0`, skip the automatic review when the diff has fewer than this many `+/-` lines. `0` (default) disables the threshold. Skipped rounds do not consume `CCR_MAX_ROUNDS`.
-- `CCR_PROMPT_GATE`: prompt-based gating of automatic reviews. `on` (default) suppresses a review when the user prompt looks read-only (a question/explanation) or the developer emitted `CCR_REVIEW: skip`; `advisory` only logs what it would do (to `ccr-events`); `off` disables it. It is **suppress-only** — it never starts a review on its own (a real diff is still required), and an explicit `CCR_REVIEW: request` line overrides a read-only classification.
+- `CCR_PROMPT_GATE`: prompt-based gating of automatic reviews. `on` (default) suppresses a review when the user prompt looks read-only (a question/explanation, in English or Korean) or the developer emitted `CCR_REVIEW: skip`; `advisory` only logs what it would do (to `ccr-events`); `off` disables it. It is **suppress-only** — it never starts a review on its own (a real diff is still required), and an explicit `CCR_REVIEW: request` line (or a change/implement request in the prompt) overrides a read-only classification.
 
 The developer agent can end a turn with one plain-text line — `CCR_REVIEW: request` or `CCR_REVIEW: skip` — to tell CCR whether the turn warrants an automatic review; omitting it falls back to the file-change heuristic. This is separate from the reviewer's `REVIEW_DECISION:` line.
 
