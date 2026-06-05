@@ -1,11 +1,27 @@
 {
   "name": "claude-codex-review",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
+  "description": "Claude-Codex Review (CCR) loop for cmux: a hook-based two-agent review workflow.",
+  "bin": {
+    "ccr": "bin/ccr"
+  },
   "engines": {
     "bun": ">=1.0.0"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jayl2kor/cmux.git"
+  },
+  "files": [
+    "bin",
+    "src",
+    "templates",
+    "scripts",
+    "docs",
+    "README.md"
+  ],
   "scripts": {
     "install:ccr": "bun run src/install.ts",
     "test": "bun test",

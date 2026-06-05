@@ -17,6 +17,26 @@ If you are not sure where to begin, start with [`docs/start-here.md`](docs/start
 
 ## Install
 
+### Via npm (from GitHub)
+
+Install the package (it exposes a single `ccr` command), then run the setup:
+
+```sh
+npm i -g github:jayl2kor/cmux
+ccr install
+```
+
+`ccr install` performs the same machine setup as the script below: it copies the
+`ccr-*` command ecosystem into `~/.local/bin`, merges the CCR hooks into
+`~/.claude/settings.json` and `~/.codex/hooks.json`, and installs the slash
+commands and config templates. After it finishes, `ccr help` lists the commands,
+and the individual `ccr-*` wrappers are on your `PATH`.
+
+> The runtime is Bun, so `bun` must be installed (the `ccr` launcher and the
+> generated wrappers run under it). `npm` is only used to fetch/update the package.
+
+### Via the script (from a checkout)
+
 From this directory:
 
 ```sh

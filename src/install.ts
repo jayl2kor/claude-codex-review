@@ -448,7 +448,7 @@ function writeVersionFile(): void {
 // ===========================================================================
 // main — reproduces installer-logic.sh in order.
 // ===========================================================================
-function main(): void {
+export function main(): void {
   // Step 2: require bun (the runtime is the bundled ccr-cli.js Bun CLI).
   needCmd("bun");
 

@@ -1,0 +1,71 @@
+#!/usr/bin/env bun
+/**
+ * bin/ccr — the npm package entrypoint (the single `bin` exposed to npm).
+ *
+ * Distribution model: install this package from GitHub
+ *   npm i -g github:jayl2kor/cmux
+ * then run `ccr install` to perform the workspace setup (copy the ccr-* command
+ * ecosystem into ~/.local/bin, merge the Claude/Codex hooks, install the slash
+ * commands and config templates). The heavy lifting is unchanged — `ccr install`
+ * just calls the same installer that `bash ccr.sh` / `bun run src/install.ts` use.
+ *
+ * Everything other than `install` / `help` is forwarded to the bundled CLI as a
+ * `--command <sub>` invocation, so `ccr status`, `ccr request --use-diff …`, etc.
+ * behave exactly like the individually-installed ccr-* wrappers.
+ *
+ * Runtime is Bun (per project decision): this file runs under `bun`, which also
+ * executes the imported .ts directly — no separate build step for the launcher.
+ */
+import { runCli } from "../src/cli.ts";
+import { main as runInstall } from "../src/install.ts";
+
+const SUBCOMMANDS = [
+  "enable", "disable", "reset", "status", "request", "cancel", "history",
+  "show", "uninstall", "skip-next", "report", "doctor", "support", "ready",
+  "selftest", "preview", "prune", "config", "events", "check",
+];
+
+function printHelp(): void {
+  process.stdout.write(
+    [
+      "ccr — Claude-Codex Review for cmux",
+      "",
+      "Usage:",
+      "  ccr install              Set up CCR for the current machine (hooks, commands, ~/.local/bin)",
+      "  ccr <command> [args...]  Run a CCR command (same as the ccr-<command> wrappers)",
+      "  ccr help                 Show this help",
+      "",
+      "Common commands:",
+      "  ccr status               Show CCR state for the current repo",
+      "  ccr ready                Strict check that automatic review routing is ready",
+      "  ccr request --use-diff   Send a scoped manual review to the opposite agent",
+      "  ccr doctor               Diagnose the installation and workspace",
+      "",
+      `All commands: ${SUBCOMMANDS.join(", ")}`,
+      "",
+      "After `ccr install`, finish setup in cmux:",
+      "  1) cmux-setup-claude (Claude surface)   2) cmux-setup-codex (Codex surface)",
+      "  3) ccr-enable (in the target repo)      4) trust the CCR hooks in Codex /hooks",
+      "",
+    ].join("\n"),
+  );
+}
+
+const argv = process.argv.slice(2);
+const sub = argv[0];
+
+if (sub === undefined || sub === "help" || sub === "-h" || sub === "--help") {
+  printHelp();
+  process.exit(0);
+}
+
+if (sub === "install") {
+  // Full machine setup. runInstall() exits non-zero itself on a missing
+  // prerequisite / failed selftest; otherwise it returns and we exit 0.
+  runInstall();
+  process.exit(0);
+}
+
+// Forward everything else to the bundled CLI dispatcher as `--command <sub>`.
+// Unknown subcommands are rejected by the CLI's arg parser (exit code 2).
+process.exit(runCli(["--command", sub, ...argv.slice(1)]));
