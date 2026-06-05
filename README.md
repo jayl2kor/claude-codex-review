@@ -285,6 +285,16 @@ Useful options:
 - `--question <text>`: add a concrete review question. Repeatable.
 - `--note <text>`: add extra context for the reviewer. Repeatable.
 - `--use-diff`: include current git diff as supporting context.
+- `--follow-up`: thread the most recent prior review (its decision, Must Fix count, and review file) into the request, plus an incremental `delta.patch` when combined with `--use-diff`. Put your applied / not-applied account in `--note`; the reviewer is told to verify each claim against the diff rather than trust it.
+
+Manual requests are otherwise stateless across calls — each runs in its own `manual-<timestamp>` session — so use `--follow-up` for an iterative manual loop after a `NEEDS_CHANGES` result. It locates the latest reviewed round anywhere under the CCR root:
+
+```sh
+ccr-request --type code_review --use-diff --follow-up \
+  --note "Applied the null-check at parser.ts:42; skipped the rename (out of scope)."
+```
+
+The automatic Stop-triggered loop already threads this context every round; `--follow-up` brings the same behavior to the manual path.
 
 ## Configuration
 
