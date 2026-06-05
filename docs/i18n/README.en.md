@@ -21,7 +21,18 @@ If you are not sure where to begin, start with [`docs/start-here.md`](../start-h
 
 ## Install
 
-### Via npm (from GitHub)
+### Via a release tarball (recommended)
+
+```sh
+npm i -g https://github.com/jayl2kor/claude-codex-review/releases/download/v0.1.0/claude-codex-review-0.1.0.tgz
+```
+
+This is the most reliable path: a tarball is already packed, so npm skips the
+clone/prepare step a `github:` install performs (which is heavier and can fail on
+a corrupted npm cache). A global install still runs the setup automatically (same
+as below), and `bun` must be installed. Pinned to a release version.
+
+### Via npm (from GitHub, latest)
 
 Install the package (it exposes a single `ccr` command):
 

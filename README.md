@@ -13,11 +13,13 @@ Read the full README in your language:
 ## Quick start
 
 ```sh
-npm i -g github:jayl2kor/claude-codex-review
+npm i -g https://github.com/jayl2kor/claude-codex-review/releases/download/v0.1.0/claude-codex-review-0.1.0.tgz
 ```
 
 A global install runs the setup automatically. If it was skipped (CI, or `bun`
-not yet installed), finish with `ccr install`.
+not yet installed), finish with `ccr install`. To track the latest commit on
+`master` instead of a pinned release, use
+`npm i -g github:jayl2kor/claude-codex-review`.
 
 See [English](docs/i18n/README.en.md) · [한국어](docs/i18n/README.ko.md) for setup,
 daily use, the full command reference, configuration, and troubleshooting.

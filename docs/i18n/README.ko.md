@@ -21,7 +21,15 @@
 
 ## 설치
 
-### npm으로 설치 (GitHub에서)
+### Release tarball로 설치 (권장)
+
+```sh
+npm i -g https://github.com/jayl2kor/claude-codex-review/releases/download/v0.1.0/claude-codex-review-0.1.0.tgz
+```
+
+가장 안정적인 방법입니다. tarball은 이미 패킹돼 있어 `github:` 설치가 수행하는 clone/prepare 단계(무겁고 npm 캐시가 깨지면 실패할 수 있음)를 건너뜁니다. 전역 설치는 셋업을 자동 실행하며(아래와 동일), `bun`이 설치돼 있어야 합니다. 릴리스 버전에 고정됩니다.
+
+### npm으로 설치 (GitHub, 최신)
 
 패키지를 설치합니다(단일 `ccr` 명령을 노출합니다).
 
