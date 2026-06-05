@@ -3,7 +3,7 @@
  * bin/ccr — the npm package entrypoint (the single `bin` exposed to npm).
  *
  * Distribution model: install this package from GitHub
- *   npm i -g github:jayl2kor/cmux
+ *   npm i -g github:jayl2kor/claude-codex-review
  * then run `ccr install` to perform the workspace setup (copy the ccr-* command
  * ecosystem into ~/.local/bin, merge the Claude/Codex hooks, install the slash
  * commands and config templates). The heavy lifting is unchanged — `ccr install`

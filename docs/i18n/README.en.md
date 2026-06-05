@@ -26,7 +26,7 @@ If you are not sure where to begin, start with [`docs/start-here.md`](../start-h
 Install the package (it exposes a single `ccr` command), then run the setup:
 
 ```sh
-npm i -g github:jayl2kor/cmux
+npm i -g github:jayl2kor/claude-codex-review
 ccr install
 ```
 

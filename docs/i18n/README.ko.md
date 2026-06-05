@@ -26,7 +26,7 @@
 패키지를 설치하면(단일 `ccr` 명령을 노출합니다) 이후 셋업을 실행합니다.
 
 ```sh
-npm i -g github:jayl2kor/cmux
+npm i -g github:jayl2kor/claude-codex-review
 ccr install
 ```
 
