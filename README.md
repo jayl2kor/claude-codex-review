@@ -14,8 +14,10 @@ Read the full README in your language:
 
 ```sh
 npm i -g github:jayl2kor/claude-codex-review
-ccr install
 ```
+
+A global install runs the setup automatically. If it was skipped (CI, or `bun`
+not yet installed), finish with `ccr install`.
 
 See [English](docs/i18n/README.en.md) · [한국어](docs/i18n/README.ko.md) for setup,
 daily use, the full command reference, configuration, and troubleshooting.

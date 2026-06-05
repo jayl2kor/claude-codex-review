@@ -23,6 +23,7 @@
     "README.md"
   ],
   "scripts": {
+    "postinstall": "node scripts/postinstall.mjs",
     "install:ccr": "bun run src/install.ts",
     "test": "bun test",
     "check:sync": "bun run scripts/check-templates-sync.ts",

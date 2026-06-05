@@ -23,14 +23,15 @@
 
 ### npm으로 설치 (GitHub에서)
 
-패키지를 설치하면(단일 `ccr` 명령을 노출합니다) 이후 셋업을 실행합니다.
+패키지를 설치합니다(단일 `ccr` 명령을 노출합니다).
 
 ```sh
 npm i -g github:jayl2kor/claude-codex-review
-ccr install
 ```
 
-`ccr install`은 아래 스크립트와 동일한 머신 셋업을 수행합니다. 즉 `ccr-*` 명령 생태계를 `~/.local/bin`에 복사하고, CCR hook을 `~/.claude/settings.json`과 `~/.codex/hooks.json`에 병합하며, 슬래시 커맨드와 설정 템플릿을 설치합니다. 완료되면 `ccr help`로 명령 목록을 볼 수 있고, 개별 `ccr-*` 래퍼가 `PATH`에 올라갑니다.
+전역 설치는 셋업을 자동으로 실행합니다 — `postinstall` 훅이 `ccr install`을 호출합니다. 비전역/의존성 설치, CI, 그리고 `bun`이 설치돼 있지 않은 경우에는 건너뛰며, 그럴 때는 직접 `ccr install`을 실행하세요.
+
+이 셋업은 아래 스크립트와 동일한 머신 설정을 수행합니다. 즉 `ccr-*` 명령 생태계를 `~/.local/bin`에 복사하고, CCR hook을 `~/.claude/settings.json`과 `~/.codex/hooks.json`에 병합하며, 슬래시 커맨드와 설정 템플릿을 설치합니다. 완료되면 `ccr help`로 명령 목록을 볼 수 있고, 개별 `ccr-*` 래퍼가 `PATH`에 올라갑니다.
 
 > 런타임은 Bun이므로 `bun`이 설치돼 있어야 합니다(`ccr` 런처와 생성된 래퍼가 Bun 위에서 실행됩니다). `npm`은 패키지를 받아오거나 업데이트하는 용도로만 쓰입니다.
 

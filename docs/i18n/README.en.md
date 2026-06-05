@@ -23,14 +23,17 @@ If you are not sure where to begin, start with [`docs/start-here.md`](../start-h
 
 ### Via npm (from GitHub)
 
-Install the package (it exposes a single `ccr` command), then run the setup:
+Install the package (it exposes a single `ccr` command):
 
 ```sh
 npm i -g github:jayl2kor/claude-codex-review
-ccr install
 ```
 
-`ccr install` performs the same machine setup as the script below: it copies the
+A global install runs the setup automatically — a `postinstall` hook invokes
+`ccr install`. It is skipped for non-global/dependency installs, in CI, and when
+`bun` is not installed; in those cases run `ccr install` yourself.
+
+The setup performs the same machine configuration as the script below: it copies the
 `ccr-*` command ecosystem into `~/.local/bin`, merges the CCR hooks into
 `~/.claude/settings.json` and `~/.codex/hooks.json`, and installs the slash
 commands and config templates. After it finishes, `ccr help` lists the commands,
