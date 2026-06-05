@@ -10,7 +10,7 @@ The main implementation is the single installer script:
 
 The primary user guide is:
 
-- [`README.md`](../README.md): setup, daily usage, commands, configuration, safety rules, troubleshooting, and uninstall notes.
+- [`README.md`](../README.md): language switcher for the primary user guide. The full text (setup, daily usage, commands, configuration, safety rules, troubleshooting, uninstall) lives in [`docs/i18n/README.en.md`](i18n/README.en.md) (English, default) and [`docs/i18n/README.ko.md`](i18n/README.ko.md) (한국어).
 - [`start-here.md`](start-here.md): role-based route to the right CCR document or command.
 - [`quickstart.md`](quickstart.md): shortest install, setup, first-review, and recovery path.
 - [`examples.md`](examples.md): task-oriented command recipes for common CCR workflows.
