@@ -8,6 +8,8 @@
  */
 import { test, expect } from "bun:test";
 import { spawnSync } from "node:child_process";
+import { mkdtempSync, mkdirSync, copyFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const SCRIPT = join(import.meta.dir, "..", "scripts", "postinstall.mjs");
@@ -32,4 +34,25 @@ test("global + CI install skips with guidance (exit 0, installer not run)", () =
   expect(r.status).toBe(0);
   expect(r.stdout).toContain("CI detected");
   expect(r.stdout).not.toContain(INSTALLER_DONE);
+});
+
+test("git-dep preparation path is a silent no-op even when global=true", () => {
+  // Simulate npm's prep clone: run the script from a `git-clone` cache path.
+  // Guard 0 must fire BEFORE the global/bun/installer logic, so a global-marked
+  // run from here stays silent and runs nothing.
+  const base = mkdtempSync(join(tmpdir(), "ccr-git-clone-"));
+  try {
+    const scriptsDir = join(base, "scripts");
+    mkdirSync(scriptsDir, { recursive: true });
+    copyFileSync(SCRIPT, join(scriptsDir, "postinstall.mjs"));
+    const r = spawnSync("node", [join(scriptsDir, "postinstall.mjs")], {
+      encoding: "utf-8",
+      env: { ...process.env, npm_config_global: "true", CI: "" },
+    });
+    expect(r.status).toBe(0);
+    expect((r.stdout || "").trim()).toBe(""); // guard 0 → silent, nothing ran
+    expect(r.stdout || "").not.toContain(INSTALLER_DONE);
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
 });
