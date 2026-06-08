@@ -17,7 +17,7 @@
 const COMMANDS = [
   "enable", "disable", "reset", "status", "request",
   "cancel", "history", "show", "uninstall", "skip-next",
-  "report", "doctor", "support", "ready", "selftest", "preview", "prune", "config", "events", "check",
+  "report", "doctor", "support", "ready", "selftest", "preview", "prune", "config", "events", "check", "repair",
 ];
 const REVIEW_TYPES = [
   "code_review", "architecture_review", "design_review",
@@ -52,6 +52,8 @@ export interface CcrArgs {
   include_diffs: boolean;
   keep: number | null;
   days: number | null;
+  role: string | null;
+  force: boolean;
 }
 
 /** Raised on a parse/validation failure; the CLI maps this to exit code 2. */
@@ -66,7 +68,7 @@ function defaults(): CcrArgs {
     use_diff: false, follow_up: false, limit: 20, session: null, round: null,
     review: false, apply: false, purge: false, outcome: null,
     print_body: false, json_output: false, include_diffs: false,
-    keep: null, days: null,
+    keep: null, days: null, role: null, force: false,
   };
 }
 
@@ -75,7 +77,7 @@ const STRING_FLAGS: Record<string, keyof CcrArgs> = {
   "--agent": "agent", "--event": "event", "--command": "command",
   "--reviewer": "reviewer", "--type": "type", "--title": "title",
   "--purpose": "purpose", "--non-goal": "non_goal", "--invariant": "invariant",
-  "--session": "session", "--outcome": "outcome",
+  "--session": "session", "--outcome": "outcome", "--role": "role",
 };
 const APPEND_FLAGS: Record<string, "file" | "dir" | "question" | "note"> = {
   "--file": "file", "--dir": "dir", "--question": "question", "--note": "note",
@@ -86,13 +88,14 @@ const INT_FLAGS: Record<string, "limit" | "round" | "keep" | "days"> = {
 const TRUE_FLAGS: Record<string, keyof CcrArgs> = {
   "--use-diff": "use_diff", "--follow-up": "follow_up", "--review": "review", "--apply": "apply",
   "--purge": "purge", "--print": "print_body", "--json": "json_output",
-  "--include-diffs": "include_diffs",
+  "--include-diffs": "include_diffs", "--force": "force",
 };
 const CHOICES: Partial<Record<keyof CcrArgs, string[]>> = {
   agent: ["claude", "codex"],
   command: COMMANDS,
   reviewer: ["auto", "claude", "codex"],
   type: REVIEW_TYPES,
+  role: ["claude", "codex"],
 };
 
 /** Python `int(str)` for argparse type=int: whole-string signed integer, else error. */

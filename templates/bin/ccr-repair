@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -euo pipefail
+case "${1:-}" in -h|--help)
+  cat <<USAGE
+Usage: ccr-repair [--role claude|codex] [--force]
+Re-pair the CURRENT cmux surface for CCR after a surface was closed/reopened
+(a reopened surface gets a fresh CMUX_SURFACE_ID, so its old registration goes
+stale). Registers this surface as the given role — inferred when exactly one
+role slot is free or its registered surface is gone. Refuses to take over a
+registration that still points at a live surface unless --force.
+
+Note: the SessionStart hook already self-heals automatically; use this only to
+pair a deliberately different surface or to override a duplicate.
+USAGE
+  exit 0
+;; esac
+exec bun "$HOME/.local/bin/ccr-cli.js" --command repair "$@"

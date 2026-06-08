@@ -36,6 +36,7 @@ import { commandSupport } from "./commands/support";
 import { commandReady } from "./commands/ready";
 import { commandSelftest } from "./commands/selftest";
 import { commandUninstall } from "./commands/uninstall";
+import { commandRepair } from "./commands/repair";
 
 function dispatchCommand(command: string, args: CcrArgs): number {
   switch (command) {
@@ -79,9 +80,11 @@ function dispatchCommand(command: string, args: CcrArgs): number {
       return commandSelftest(args.json_output);
     case "uninstall":
       return commandUninstall(args);
+    case "repair":
+      return commandRepair(args);
     default:
-      // All 20 commands are ported; an unknown --command should be impossible
-      // (argparse choices reject it), but keep a guard for safety.
+      // Every --command choice is dispatched above; an unknown command should be
+      // impossible (the parser's choices reject it), but keep a guard for safety.
       throw new Error(`unknown ccr command: ${command}`);
   }
 }

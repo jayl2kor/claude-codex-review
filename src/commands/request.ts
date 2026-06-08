@@ -16,7 +16,7 @@ import {
   workspaceEnabled, surfaceForRole, roleForCurrentSurface, sendToSurface, cmuxStatus, cmuxLog,
 } from "../lib/cmux";
 import { lockedState, writeStatus } from "../lib/lock";
-import { opposite, sanitize } from "../lib/text";
+import { opposite, sanitize, isAgentRole } from "../lib/text";
 import { collectDiff, computeDeltaPatch } from "../lib/git";
 import { findLatestReviewedRound, parsePreviousReview } from "../lib/review";
 import { loadReviewInstructions } from "../lib/session";
@@ -27,9 +27,6 @@ import { out, err, g } from "./shared";
 
 function pad4(n: number): string {
   return String(n).padStart(4, "0");
-}
-function isAgentRole(role: string): boolean {
-  return role === "claude" || role === "codex";
 }
 
 export function commandRequest(args: CcrArgs): number {

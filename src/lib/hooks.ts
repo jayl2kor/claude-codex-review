@@ -21,7 +21,8 @@ import { isAbsolute, join } from "node:path";
 import { getOrNull, now, appendJsonl } from "./io";
 import { rootForCwd, sessionContextPath } from "./paths";
 import { lockedState, writeStatus, ensureSession, markDirty, clearDirty, writePromptGate, clearPromptGate } from "./lock";
-import { cmuxLog, cmuxStatus, roleForCurrentSurface, workspaceEnabled } from "./cmux";
+import { cmuxLog, cmuxStatus, roleForCurrentSurface, workspaceEnabled, healPairing } from "./cmux";
+import { isAgentRole } from "./text";
 import { toolName, toolCommand, bashLooksMutating, shouldMarkDirtyForTool } from "./tool";
 import { reviewerBlockResponse } from "./misc";
 import { reapStaleActive, startReview, finishReview } from "./review";
@@ -140,8 +141,18 @@ export function handleUserPromptSubmit(
  */
 export function handleHook(agent: string, event: string, inputData: Record<string, unknown>): HookResult {
   const cwd = String(getOrNull(inputData, "cwd") || process.cwd());
+  const enabled = workspaceEnabled();
+  // Self-heal a stale/missing surface registration for this hook-proven agent
+  // role before the role gate below. A surface that was closed and reopened gets
+  // a fresh CMUX_SURFACE_ID, so its prior registration is stale and
+  // roleForCurrentSurface() would return "unknown" — wedging the pair with no
+  // recovery. Re-pairing on the session's first events restores it automatically
+  // (without hijacking a registration that still points at a live surface).
+  if (enabled && isAgentRole(agent) && (event === "SessionStart" || event === "UserPromptSubmit")) {
+    healPairing(agent);
+  }
   const role = roleForCurrentSurface();
-  if (!workspaceEnabled() || role === "unknown") {
+  if (!enabled || role === "unknown") {
     return agent === "codex" && event === "Stop" ? {} : null;
   }
 

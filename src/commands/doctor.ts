@@ -9,7 +9,7 @@ import { existsSync } from "node:fs";
 
 import { loadJson } from "../lib/io";
 import { rootForCwd, skipMarkerPath, workspaceId, surfaceId } from "../lib/paths";
-import { workspaceEnabled, surfaceForRole, roleForCurrentSurface } from "../lib/cmux";
+import { workspaceEnabled, surfaceForRole, roleForCurrentSurface, liveSurfaceIds, isSurfaceLive } from "../lib/cmux";
 import { insideGit } from "../lib/git";
 import { formatDuration } from "../lib/text";
 import { doctorNextMessage, doctorActionItems } from "../lib/misc";
@@ -83,6 +83,21 @@ export function doctorRows(cwd: string): DoctorRow[] {
   const codexSurface = surfaceForRole("codex");
   add(claudeSurface ? "ok" : "warn", "registered Claude surface", claudeSurface || "not registered");
   add(codexSurface ? "ok" : "warn", "registered Codex surface", codexSurface || "not registered");
+
+  // Liveness: a registered surface whose id is no longer among the workspace's
+  // live surfaces was closed/reopened and needs re-pairing (SessionStart
+  // self-heals it; ccr-repair forces it). Skipped when enumeration is
+  // unavailable (not in a cmux workspace, or cmux can't be reached).
+  const live = liveSurfaceIds();
+  if (live !== null) {
+    for (const [r, reg] of [["Claude", claudeSurface], ["Codex", codexSurface]] as const) {
+      if (!reg) {
+        continue;
+      }
+      const alive = isSurfaceLive(reg, live);
+      add(alive ? "ok" : "warn", `${r} surface live`, alive ? reg : `${reg} is gone — re-pair (restart the surface or run ccr-repair there)`);
+    }
+  }
 
   const enabled = workspaceEnabled();
   add(enabled ? "ok" : "warn", "workspace enabled", enabled ? "enabled" : "run ccr-enable inside the target repo");

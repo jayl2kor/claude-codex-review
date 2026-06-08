@@ -543,6 +543,7 @@ export function main(): void {
   console.log("  ccr-report");
   console.log("  ccr-ready");
   console.log("  ccr-doctor");
+  console.log("  ccr-repair");
   console.log("  ccr-support");
   console.log("  ccr-selftest");
   console.log("  ccr-uninstall");

@@ -16,10 +16,10 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, accessSync, statSync, constants as fsConstants } from "node:fs";
+import { existsSync, readFileSync, accessSync, statSync, mkdirSync, constants as fsConstants } from "node:fs";
 import { join, delimiter } from "node:path";
 
-import { readText } from "./io";
+import { readText, writeFileAtomic } from "./io";
 import { splitlines } from "./pycompat";
 import { surfaceId, workspaceId, workspaceConfigDir, ENABLED_FILE } from "./paths";
 import { CCR_HANDOFF_SENTINEL } from "./constants";
@@ -145,9 +145,139 @@ export function roleForCurrentSurface(): string {
   return "unknown";
 }
 
+/** Path to the role->surface registration file (e.g. `<wsdir>/claude-surface`). */
+function surfaceFile(role: string): string {
+  return join(workspaceConfigDir(), `${role}-surface`);
+}
+
 /** Python `surface_for_role` (188-189). */
 export function surfaceForRole(role: string): string {
-  return readText(join(workspaceConfigDir(), `${role}-surface`));
+  return readText(surfaceFile(role));
+}
+
+/**
+ * Register `surface` as the given role's surface. Atomic, with the trailing
+ * newline the bash setup scripts write (readText strips it on read, so role
+ * detection stays consistent). Creates the workspace config dir if absent.
+ */
+export function registerSurface(role: string, surface: string): void {
+  mkdirSync(workspaceConfigDir(), { recursive: true });
+  writeFileAtomic(surfaceFile(role), surface + "\n");
+}
+
+/**
+ * The set of live surface UUIDs (uppercased) in the CURRENT cmux workspace,
+ * parsed from `cmux list-pane-surfaces --id-format both`. Both CCR agents share
+ * one workspace (their registration files live under the same workspace dir), so
+ * this enumerates both surfaces. Returns null — not an empty set — whenever the
+ * lookup is unavailable (no workspace id, cmux missing, non-zero exit, or no
+ * UUID parsed) so callers can tell "known dead" apart from "couldn't verify" and
+ * never reclaim a registration they merely failed to confirm.
+ */
+export function liveSurfaceIds(): Set<string> | null {
+  const wid = workspaceId();
+  if (!wid) {
+    return null;
+  }
+  const res = spawnSync(resolveCmuxBin(), ["list-pane-surfaces", "--workspace", wid, "--id-format", "both"], {
+    stdio: ["ignore", "pipe", "ignore"],
+    encoding: "utf-8",
+  });
+  if (res.error || res.status !== 0 || typeof res.stdout !== "string") {
+    return null;
+  }
+  const ids = new Set<string>();
+  const re = /[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}/g;
+  for (const m of res.stdout.matchAll(re)) {
+    ids.add(m[0].toUpperCase());
+  }
+  return ids.size > 0 ? ids : null;
+}
+
+/** True iff `id` is among `live`; null when liveness is unknown (`live` is null). "" is dead. */
+export function isSurfaceLive(id: string, live: Set<string> | null): boolean | null {
+  if (!id) {
+    return false;
+  }
+  if (live === null) {
+    return null;
+  }
+  return live.has(id.toUpperCase());
+}
+
+export type PairingAction =
+  | "noop"            // current already registered for this role
+  | "register-unset"  // role had no registration; claim current
+  | "repair-dead"     // role's registered surface is gone; re-pair to current
+  | "refuse-live"     // a different, still-live surface owns the role; don't steal
+  | "unknown-liveness"; // couldn't verify the registered surface; leave it alone
+
+/**
+ * Pure pairing decision (no IO — unit-tested). Given this session's live surface
+ * id, the role's currently registered id, and whether that registered id is live
+ * (null = couldn't verify), decide what to do. See {@link healPairing}.
+ */
+export function decidePairing(current: string, registered: string, regAlive: boolean | null): PairingAction {
+  if (!current || registered === current) {
+    return "noop";
+  }
+  if (!registered) {
+    return "register-unset";
+  }
+  if (regAlive === false) {
+    return "repair-dead";
+  }
+  if (regAlive === true) {
+    return "refuse-live";
+  }
+  return "unknown-liveness";
+}
+
+export interface HealResult {
+  action: PairingAction;
+  healed: boolean;
+}
+
+/**
+ * Reconcile this session's surface registration with reality. `agent` is the
+ * hook-proven role ("claude"/"codex"), which is independent of the (possibly
+ * stale) surface-file mapping: a restarted surface gets a fresh CMUX_SURFACE_ID,
+ * so its prior registration goes stale and role detection returns "unknown",
+ * wedging the pair. Called on a session's first events to auto re-pair when the
+ * old registration is missing or points at a now-dead surface; refuses to hijack
+ * a registration that still points at a different, live surface (duplicate
+ * session) so two same-role tabs don't fight.
+ */
+export function healPairing(agent: string): HealResult {
+  const current = surfaceId();
+  const registered = surfaceForRole(agent);
+  let regAlive: boolean | null = null;
+  if (current && registered && registered !== current) {
+    regAlive = isSurfaceLive(registered, liveSurfaceIds());
+  }
+  const action = decidePairing(current, registered, regAlive);
+  switch (action) {
+    case "register-unset":
+      registerSurface(agent, current);
+      cmuxLog("info", `CCR: registered ${agent} surface ${current} (was unset)`);
+      return { action, healed: true };
+    case "repair-dead":
+      registerSurface(agent, current);
+      cmuxLog("info", `CCR: re-paired ${agent} surface (previous ${registered} is gone -> ${current})`);
+      cmuxStatus("CCR re-paired", "#34C759");
+      return { action, healed: true };
+    case "refuse-live":
+      cmuxLog(
+        "warning",
+        `CCR: ${agent} is already paired to a live surface ${registered}; this session (${current}) will NOT take over (run \`ccr-repair --force\` to override)`,
+      );
+      return { action, healed: false };
+    case "unknown-liveness":
+      cmuxLog("warning", `CCR: could not verify whether ${agent} surface ${registered} is live; leaving the registration unchanged`);
+      return { action, healed: false };
+    default:
+      return { action, healed: false };
+  }
 }
 
 /** Python `workspace_enabled` (192-196): workspace id present AND listed in ENABLED_FILE. */

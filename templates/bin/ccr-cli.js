@@ -330,7 +330,7 @@ function readStdinJson() {
 }
 
 // src/lib/hooks.ts
-import { existsSync as existsSync3, readFileSync as readFileSync8, appendFileSync as appendFileSync2, mkdirSync as mkdirSync5, statSync as statSync7 } from "fs";
+import { existsSync as existsSync3, readFileSync as readFileSync8, appendFileSync as appendFileSync2, mkdirSync as mkdirSync6, statSync as statSync7 } from "fs";
 import { isAbsolute as isAbsolute2, join as join7 } from "path";
 
 // src/lib/paths.ts
@@ -344,6 +344,9 @@ function sanitize(value) {
 }
 function opposite(role) {
   return role === "claude" ? "codex" : "claude";
+}
+function isAgentRole(role) {
+  return role === "claude" || role === "codex";
 }
 function joinSections(sections) {
   return sections.map(([label, body]) => `${label}
@@ -646,7 +649,8 @@ var GENERATED_BIN_NAMES = [
   "ccr-config",
   "ccr-events",
   "ccr-check",
-  "ccr-uninstall"
+  "ccr-uninstall",
+  "ccr-repair"
 ];
 var GENERATED_CLAUDE_COMMAND_FILES = [
   "ccr-request.md",
@@ -662,7 +666,8 @@ var GENERATED_CLAUDE_COMMAND_FILES = [
   "ccr-prune.md",
   "ccr-config.md",
   "ccr-events.md",
-  "ccr-check.md"
+  "ccr-check.md",
+  "ccr-repair.md"
 ];
 var MUTATING_TOOL_NAMES = new Set([
   "Edit",
@@ -1061,7 +1066,7 @@ function ensureSession(root, agent, role, inputData) {
 
 // src/lib/cmux.ts
 import { spawnSync } from "child_process";
-import { existsSync as existsSync2, readFileSync as readFileSync3, accessSync, statSync as statSync2, constants as fsConstants2 } from "fs";
+import { existsSync as existsSync2, readFileSync as readFileSync3, accessSync, statSync as statSync2, mkdirSync as mkdirSync3, constants as fsConstants2 } from "fs";
 import { join as join3, delimiter } from "path";
 var cachedCmuxPathEnv = null;
 var cachedCmuxBin = null;
@@ -1146,8 +1151,87 @@ function roleForCurrentSurface() {
   }
   return "unknown";
 }
+function surfaceFile(role) {
+  return join3(workspaceConfigDir(), `${role}-surface`);
+}
 function surfaceForRole(role) {
-  return readText(join3(workspaceConfigDir(), `${role}-surface`));
+  return readText(surfaceFile(role));
+}
+function registerSurface(role, surface) {
+  mkdirSync3(workspaceConfigDir(), { recursive: true });
+  writeFileAtomic(surfaceFile(role), surface + `
+`);
+}
+function liveSurfaceIds() {
+  const wid = workspaceId();
+  if (!wid) {
+    return null;
+  }
+  const res = spawnSync(resolveCmuxBin(), ["list-pane-surfaces", "--workspace", wid, "--id-format", "both"], {
+    stdio: ["ignore", "pipe", "ignore"],
+    encoding: "utf-8"
+  });
+  if (res.error || res.status !== 0 || typeof res.stdout !== "string") {
+    return null;
+  }
+  const ids = new Set;
+  const re = /[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}/g;
+  for (const m of res.stdout.matchAll(re)) {
+    ids.add(m[0].toUpperCase());
+  }
+  return ids.size > 0 ? ids : null;
+}
+function isSurfaceLive(id, live) {
+  if (!id) {
+    return false;
+  }
+  if (live === null) {
+    return null;
+  }
+  return live.has(id.toUpperCase());
+}
+function decidePairing(current, registered, regAlive) {
+  if (!current || registered === current) {
+    return "noop";
+  }
+  if (!registered) {
+    return "register-unset";
+  }
+  if (regAlive === false) {
+    return "repair-dead";
+  }
+  if (regAlive === true) {
+    return "refuse-live";
+  }
+  return "unknown-liveness";
+}
+function healPairing(agent) {
+  const current = surfaceId();
+  const registered = surfaceForRole(agent);
+  let regAlive = null;
+  if (current && registered && registered !== current) {
+    regAlive = isSurfaceLive(registered, liveSurfaceIds());
+  }
+  const action = decidePairing(current, registered, regAlive);
+  switch (action) {
+    case "register-unset":
+      registerSurface(agent, current);
+      cmuxLog("info", `CCR: registered ${agent} surface ${current} (was unset)`);
+      return { action, healed: true };
+    case "repair-dead":
+      registerSurface(agent, current);
+      cmuxLog("info", `CCR: re-paired ${agent} surface (previous ${registered} is gone -> ${current})`);
+      cmuxStatus("CCR re-paired", "#34C759");
+      return { action, healed: true };
+    case "refuse-live":
+      cmuxLog("warning", `CCR: ${agent} is already paired to a live surface ${registered}; this session (${current}) will NOT take over (run \`ccr-repair --force\` to override)`);
+      return { action, healed: false };
+    case "unknown-liveness":
+      cmuxLog("warning", `CCR: could not verify whether ${agent} surface ${registered} is live; leaving the registration unchanged`);
+      return { action, healed: false };
+    default:
+      return { action, healed: false };
+  }
 }
 function workspaceEnabled() {
   const wid = workspaceId();
@@ -1158,7 +1242,7 @@ function workspaceEnabled() {
 }
 
 // src/lib/review.ts
-import { readFileSync as readFileSync7, writeFileSync as writeFileSync3, statSync as statSync6, unlinkSync as unlinkSync3, mkdirSync as mkdirSync4, readdirSync as readdirSync3 } from "fs";
+import { readFileSync as readFileSync7, writeFileSync as writeFileSync3, statSync as statSync6, unlinkSync as unlinkSync3, mkdirSync as mkdirSync5, readdirSync as readdirSync3 } from "fs";
 import { join as join6 } from "path";
 
 // src/lib/decision.ts
@@ -1878,7 +1962,7 @@ import {
   readFileSync as readFileSync5,
   writeFileSync,
   appendFileSync,
-  mkdirSync as mkdirSync3,
+  mkdirSync as mkdirSync4,
   statSync as statSync4,
   readdirSync
 } from "fs";
@@ -1910,7 +1994,7 @@ function captureSessionContext(root, sessionId, prompt) {
     return;
   }
   const path = sessionContextPath(root, sessionId);
-  mkdirSync3(dirname2(path), { recursive: true });
+  mkdirSync4(dirname2(path), { recursive: true });
   const body = [
     `<!-- captured: ${now()} -->`,
     "# Task Context",
@@ -1955,7 +2039,7 @@ function loadSessionIntent(root, sessionId, fallbackMessage = "") {
 }
 function appendLedger(root, sessionId, roundNo, decision, mustFix, reviewFile) {
   const path = sessionLedgerPath(root, sessionId);
-  mkdirSync3(dirname2(path), { recursive: true });
+  mkdirSync4(dirname2(path), { recursive: true });
   const headerNeeded = !isFile2(path);
   const lines = [];
   if (headerNeeded) {
@@ -2666,7 +2750,7 @@ function startReview(root, state, inputData, role) {
   const reviewerSurface = surfaceForRole(reviewer);
   const workerSurface = surfaceForRole(role);
   const roundDir = join6(sessionDir(root, sid), "rounds", pad42(roundNo));
-  mkdirSync4(roundDir, { recursive: true });
+  mkdirSync5(roundDir, { recursive: true });
   const diffFile = join6(roundDir, "diff.patch");
   const requestFile = join6(roundDir, "request.md");
   writeFileSync3(diffFile, diffText, "utf-8");
@@ -2876,8 +2960,12 @@ function handleUserPromptSubmit(root, state, inputData, agent, role) {
 }
 function handleHook(agent, event, inputData) {
   const cwd = String(getOrNull(inputData, "cwd") || process.cwd());
+  const enabled = workspaceEnabled();
+  if (enabled && isAgentRole(agent) && (event === "SessionStart" || event === "UserPromptSubmit")) {
+    healPairing(agent);
+  }
   const role = roleForCurrentSurface();
-  if (!workspaceEnabled() || role === "unknown") {
+  if (!enabled || role === "unknown") {
     return agent === "codex" && event === "Stop" ? {} : null;
   }
   const root = rootForCwd(cwd);
@@ -2947,7 +3035,7 @@ function ensureInfoExclude(cwd) {
     path = join7(cwd, path);
   }
   const exclude = join7(path, "info", "exclude");
-  mkdirSync5(join7(path, "info"), { recursive: true });
+  mkdirSync6(join7(path, "info"), { recursive: true });
   const existing = existsSync3(exclude) ? readFileSync8(exclude, "utf-8") : "";
   if (!existing.includes(".cmux/ccr/")) {
     let prefix = "";
@@ -2991,7 +3079,8 @@ var COMMANDS = [
   "prune",
   "config",
   "events",
-  "check"
+  "check",
+  "repair"
 ];
 var REVIEW_TYPES = [
   "code_review",
@@ -3032,7 +3121,9 @@ function defaults() {
     json_output: false,
     include_diffs: false,
     keep: null,
-    days: null
+    days: null,
+    role: null,
+    force: false
   };
 }
 var STRING_FLAGS = {
@@ -3046,7 +3137,8 @@ var STRING_FLAGS = {
   "--non-goal": "non_goal",
   "--invariant": "invariant",
   "--session": "session",
-  "--outcome": "outcome"
+  "--outcome": "outcome",
+  "--role": "role"
 };
 var APPEND_FLAGS2 = {
   "--file": "file",
@@ -3068,13 +3160,15 @@ var TRUE_FLAGS = {
   "--purge": "purge",
   "--print": "print_body",
   "--json": "json_output",
-  "--include-diffs": "include_diffs"
+  "--include-diffs": "include_diffs",
+  "--force": "force"
 };
 var CHOICES = {
   agent: ["claude", "codex"],
   command: COMMANDS,
   reviewer: ["auto", "claude", "codex"],
-  type: REVIEW_TYPES
+  type: REVIEW_TYPES,
+  role: ["claude", "codex"]
 };
 function parseInt10(value, flag) {
   const t = value.trim();
@@ -3741,7 +3835,7 @@ function commandConfig(args) {
 }
 
 // src/commands/enable.ts
-import { mkdirSync as mkdirSync6, existsSync as existsSync4, writeFileSync as writeFileSync4, appendFileSync as appendFileSync3, readFileSync as readFileSync12 } from "fs";
+import { mkdirSync as mkdirSync7, existsSync as existsSync4, writeFileSync as writeFileSync4, appendFileSync as appendFileSync3, readFileSync as readFileSync12 } from "fs";
 function hasOwn(o, k) {
   return Object.prototype.hasOwnProperty.call(o, k);
 }
@@ -3751,7 +3845,7 @@ function commandEnable() {
     out("cmux workspace \uC548\uC5D0\uC11C \uC2E4\uD589\uD574\uC57C \uD569\uB2C8\uB2E4.");
     return 1;
   }
-  mkdirSync6(CONFIG_ROOT, { recursive: true });
+  mkdirSync7(CONFIG_ROOT, { recursive: true });
   if (!existsSync4(ENABLED_FILE)) {
     writeFileSync4(ENABLED_FILE, "", "utf-8");
   }
@@ -3762,7 +3856,7 @@ function commandEnable() {
   }
   const cwd = process.cwd();
   const root = rootForCwd(cwd);
-  mkdirSync6(root, { recursive: true });
+  mkdirSync7(root, { recursive: true });
   ensureInfoExclude(cwd);
   lockedState(root, (state) => {
     if (!hasOwn(state, "version")) {
@@ -3807,13 +3901,13 @@ function commandDisable() {
 }
 
 // src/commands/reset.ts
-import { existsSync as existsSync6, mkdirSync as mkdirSync7, rmSync as rmSync2 } from "fs";
+import { existsSync as existsSync6, mkdirSync as mkdirSync8, rmSync as rmSync2 } from "fs";
 function commandReset() {
   const root = rootForCwd(process.cwd());
   if (existsSync6(root)) {
     rmSync2(root, { recursive: true, force: true });
   }
-  mkdirSync7(root, { recursive: true });
+  mkdirSync8(root, { recursive: true });
   lockedState(root, (state) => {
     for (const k of Object.keys(state)) {
       delete state[k];
@@ -3879,7 +3973,7 @@ function commandCancel() {
 }
 
 // src/commands/skipNext.ts
-import { mkdirSync as mkdirSync8 } from "fs";
+import { mkdirSync as mkdirSync9 } from "fs";
 function commandSkipNext() {
   const wid = workspaceId();
   if (!wid) {
@@ -3888,7 +3982,7 @@ function commandSkipNext() {
   }
   const cwd = process.cwd();
   const root = rootForCwd(cwd);
-  mkdirSync8(root, { recursive: true });
+  mkdirSync9(root, { recursive: true });
   const path = skipMarkerPath(root);
   writeJson(path, {
     at: now(),
@@ -4035,13 +4129,10 @@ function commandPrune(args) {
 }
 
 // src/commands/request.ts
-import { mkdirSync as mkdirSync9, writeFileSync as writeFileSync6 } from "fs";
+import { mkdirSync as mkdirSync10, writeFileSync as writeFileSync6 } from "fs";
 import { join as join16 } from "path";
 function pad44(n) {
   return String(n).padStart(4, "0");
-}
-function isAgentRole(role) {
-  return role === "claude" || role === "codex";
 }
 function commandRequest(args) {
   const wid = workspaceId();
@@ -4080,7 +4171,7 @@ function commandRequest(args) {
     err(`Reviewer surface equals the worker surface (${reviewerSurface}); the review would loop back to this terminal. ` + `Check cmux-setup-claude / cmux-setup-codex registration.`);
     return 1;
   }
-  mkdirSync9(root, { recursive: true });
+  mkdirSync10(root, { recursive: true });
   let rc = 0;
   lockedState(root, (state) => {
     if (state.active_request) {
@@ -4091,7 +4182,7 @@ function commandRequest(args) {
     const roundNo = Math.trunc(Number(g(state, "review_count", 0) || 0)) + 1;
     const sessionId = `manual-${Math.trunc(Date.now() / 1000)}-${sanitize(worker)}`;
     const roundDir = join16(sessionDir(root, sessionId), "rounds", pad44(roundNo));
-    mkdirSync9(roundDir, { recursive: true });
+    mkdirSync10(roundDir, { recursive: true });
     const scopeFile = join16(roundDir, "scope.json");
     const requestFile = join16(roundDir, "request.md");
     const diffFile = join16(roundDir, "diff.patch");
@@ -4278,6 +4369,16 @@ function doctorRows(cwd) {
   const codexSurface = surfaceForRole("codex");
   add(claudeSurface ? "ok" : "warn", "registered Claude surface", claudeSurface || "not registered");
   add(codexSurface ? "ok" : "warn", "registered Codex surface", codexSurface || "not registered");
+  const live = liveSurfaceIds();
+  if (live !== null) {
+    for (const [r, reg] of [["Claude", claudeSurface], ["Codex", codexSurface]]) {
+      if (!reg) {
+        continue;
+      }
+      const alive = isSurfaceLive(reg, live);
+      add(alive ? "ok" : "warn", `${r} surface live`, alive ? reg : `${reg} is gone \u2014 re-pair (restart the surface or run ccr-repair there)`);
+    }
+  }
   const enabled = workspaceEnabled();
   add(enabled ? "ok" : "warn", "workspace enabled", enabled ? "enabled" : "run ccr-enable inside the target repo");
   const inGit = insideGit(cwd);
@@ -4360,7 +4461,7 @@ function commandDoctor(jsonOutput) {
 }
 
 // src/commands/selftest.ts
-import { mkdtempSync, mkdirSync as mkdirSync11, writeFileSync as writeFileSync8, readFileSync as readFileSync16, rmSync as rmSync4, existsSync as existsSync10, utimesSync, unlinkSync as unlinkSync6 } from "fs";
+import { mkdtempSync, mkdirSync as mkdirSync12, writeFileSync as writeFileSync8, readFileSync as readFileSync16, rmSync as rmSync4, existsSync as existsSync10, utimesSync, unlinkSync as unlinkSync6 } from "fs";
 import { tmpdir } from "os";
 import { basename as basename3, join as join21 } from "path";
 import { spawnSync as spawnSync3 } from "child_process";
@@ -4450,7 +4551,7 @@ function commandReady(jsonOutput) {
 }
 
 // src/commands/support.ts
-import { mkdirSync as mkdirSync10, readdirSync as readdirSync8, readFileSync as readFileSync15, statSync as statSync16, writeFileSync as writeFileSync7 } from "fs";
+import { mkdirSync as mkdirSync11, readdirSync as readdirSync8, readFileSync as readFileSync15, statSync as statSync16, writeFileSync as writeFileSync7 } from "fs";
 import { join as join20 } from "path";
 var CRC_TABLE = (() => {
   const t = new Uint32Array(256);
@@ -4531,9 +4632,9 @@ function isFile11(p) {
 function commandSupport(args) {
   const cwd = process.cwd();
   const root = rootForCwd(cwd);
-  mkdirSync10(root, { recursive: true });
+  mkdirSync11(root, { recursive: true });
   const supportDir = join20(root, "support");
-  mkdirSync10(supportDir, { recursive: true });
+  mkdirSync11(supportDir, { recursive: true });
   const sid = args.session || latestSessionId(root) || "";
   const stamp = now().replace(/[-:]/g, "").replace(/(\d{8})T(\d{6})Z/, "$1T$2Z");
   const bundlePath = join20(supportDir, `ccr-support-${stamp}.zip`);
@@ -4740,7 +4841,7 @@ REVIEW_DECISION: NEEDS_HUMAN
       assert(preview.eligible === true);
       assert(preview.changed_lines >= 1);
       assert(arraysEqual(preview.files_touched, ["x.txt"]));
-      mkdirSync11(join21(skipMarkerPath(root), ".."), { recursive: true });
+      mkdirSync12(join21(skipMarkerPath(root), ".."), { recursive: true });
       writeJson(skipMarkerPath(root), { at: now() });
       const previewSkip = previewData(td, root);
       assert(previewSkip.eligible === false);
@@ -4755,12 +4856,12 @@ REVIEW_DECISION: NEEDS_HUMAN
       const root = join21(td, "ccr");
       const sessions = join21(root, "sessions");
       const support = join21(root, "support");
-      mkdirSync11(sessions, { recursive: true });
-      mkdirSync11(support, { recursive: true });
+      mkdirSync12(sessions, { recursive: true });
+      mkdirSync12(support, { recursive: true });
       const nowTs = Date.now() / 1000;
       for (let idx = 0;idx < 3; idx++) {
         const sdir = join21(sessions, `s${idx}`);
-        mkdirSync11(sdir);
+        mkdirSync12(sdir);
         const ts = nowTs - idx * 86400;
         utimesSync(sdir, ts, ts);
       }
@@ -4790,7 +4891,7 @@ REVIEW_DECISION: NEEDS_HUMAN
     const td = tmp();
     try {
       const root = join21(td, "ccr");
-      mkdirSync11(root, { recursive: true });
+      mkdirSync12(root, { recursive: true });
       appendJsonl(join21(root, "events.jsonl"), { at: "2026-01-01T00:00:00Z", type: "dirty", session_id: "s1" });
       appendJsonl(join21(root, "events.jsonl"), { at: "2026-01-01T00:01:00Z", type: "skipped", reason: "test" });
       const events = readEvents(root, 1);
@@ -4838,7 +4939,7 @@ REVIEW_DECISION: NEEDS_HUMAN
     try {
       const root = join21(td, "ccr");
       const sid = "sid-intent";
-      mkdirSync11(sessionDir(root, sid), { recursive: true });
+      mkdirSync12(sessionDir(root, sid), { recursive: true });
       writeFileSync8(sessionIntentPath(root, sid), `PURPOSE: from file
 NON_GOAL: also from file
 INVARIANT: must hold
@@ -4848,7 +4949,7 @@ INVARIANT: must hold
       assert(picked.purpose === "from file");
       assert(picked.non_goal === "also from file");
       const sid2 = "sid-msg";
-      mkdirSync11(sessionDir(root, sid2), { recursive: true });
+      mkdirSync12(sessionDir(root, sid2), { recursive: true });
       const picked2 = loadSessionIntent(root, sid2, `PURPOSE: from message only
 `);
       assert(picked2.purpose === "from message only");
@@ -4879,7 +4980,7 @@ CCR review: PASS`) === false);
     try {
       const root = join21(td, "ccr");
       const sid = "sid-receiver";
-      mkdirSync11(root, { recursive: true });
+      mkdirSync12(root, { recursive: true });
       markDirty(root, { session_id: sid }, "claude", "claude");
       assert(hasDirty(root, sid) === true);
       const state = {};
@@ -4893,7 +4994,7 @@ CCR review: PASS`) === false);
     const td = tmp();
     try {
       const root = join21(td, "ccr");
-      mkdirSync11(root, { recursive: true });
+      mkdirSync12(root, { recursive: true });
       const oldActive = { round: 1, worker: "claude", reviewer: "codex", worker_session_id: "sid-A", created_at: "2000-01-01T00:00:00Z" };
       const keepOld = { active_request: { ...oldActive } };
       assert(reapStaleActive(root, keepOld, "UserPromptSubmit", { session_id: "sid-A" }, "claude") === false, "age reap must not fire on UserPromptSubmit");
@@ -4935,9 +5036,9 @@ CCR review: PASS`) === false);
     try {
       process.env.CCR_PROMPT_GATE = "on";
       const root = join21(td, "ccr");
-      mkdirSync11(root, { recursive: true });
+      mkdirSync12(root, { recursive: true });
       const repo = join21(td, "repo");
-      mkdirSync11(repo, { recursive: true });
+      mkdirSync12(repo, { recursive: true });
       spawnSync3("sh", ["-c", "git init -q && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m i >/dev/null 2>&1"], { cwd: repo });
       writeFileSync8(join21(repo, "x.txt"), `hello
 world
@@ -5225,6 +5326,52 @@ Dry run only. Add --apply to perform removal.`);
   return 0;
 }
 
+// src/commands/repair.ts
+var ROLES = ["claude", "codex"];
+function commandRepair(args) {
+  if (!workspaceId()) {
+    err("Not inside a cmux workspace (CMUX_WORKSPACE_ID unset).");
+    return 1;
+  }
+  const current = surfaceId();
+  if (!current) {
+    err("No CMUX_SURFACE_ID \u2014 run ccr-repair from inside the cmux surface you want to pair.");
+    return 1;
+  }
+  const live = liveSurfaceIds();
+  const aliveOf = (id) => isSurfaceLive(id, live);
+  let role = args.role && isAgentRole(args.role) ? args.role : roleForCurrentSurface();
+  if (!isAgentRole(role)) {
+    const claimable = ROLES.filter((r) => {
+      const reg2 = surfaceForRole(r);
+      return !reg2 || aliveOf(reg2) === false;
+    });
+    if (claimable.length === 1) {
+      role = claimable[0];
+    } else {
+      err("Could not infer the role for this surface; pass --role claude|codex.");
+      return 1;
+    }
+  }
+  const reg = surfaceForRole(role);
+  if (reg && reg !== current && aliveOf(reg) === true && !args.force) {
+    err(`${role} is already paired to a live surface (${reg}). Re-run with --force to take over.`);
+    return 1;
+  }
+  registerSurface(role, current);
+  out(`Paired this surface as ${role}: ${current}`);
+  const other = opposite(role);
+  const otherReg = surfaceForRole(other);
+  if (!otherReg) {
+    out(`Partner (${other}) is not registered yet \u2014 run cmux-setup-${other} or ccr-repair in that surface.`);
+  } else if (aliveOf(otherReg) === false) {
+    out(`Partner (${other}) surface ${otherReg} appears to be gone \u2014 restart it or run ccr-repair there to complete the pair.`);
+  } else {
+    out(`Partner (${other}) surface: ${otherReg}.`);
+  }
+  return 0;
+}
+
 // src/cli.ts
 function dispatchCommand(command, args) {
   switch (command) {
@@ -5268,6 +5415,8 @@ function dispatchCommand(command, args) {
       return commandSelftest(args.json_output);
     case "uninstall":
       return commandUninstall(args);
+    case "repair":
+      return commandRepair(args);
     default:
       throw new Error(`unknown ccr command: ${command}`);
   }

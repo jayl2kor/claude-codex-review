@@ -85,14 +85,14 @@ export const GENERATED_BIN_NAMES = [
   "ccr-help", "ccr-enable", "ccr-disable", "ccr-status", "ccr-request", "ccr-reset",
   "ccr-cancel", "ccr-history", "ccr-show", "ccr-skip-next", "ccr-report",
   "ccr-doctor", "ccr-support", "ccr-ready", "ccr-selftest", "ccr-preview",
-  "ccr-prune", "ccr-config", "ccr-events", "ccr-check", "ccr-uninstall",
+  "ccr-prune", "ccr-config", "ccr-events", "ccr-check", "ccr-uninstall", "ccr-repair",
 ];
 
 export const GENERATED_CLAUDE_COMMAND_FILES = [
   "ccr-request.md", "ccr-status.md", "ccr-history.md", "ccr-skip-next.md",
   "ccr-report.md", "ccr-doctor.md", "ccr-support.md", "ccr-ready.md",
   "ccr-selftest.md", "ccr-preview.md", "ccr-prune.md", "ccr-config.md",
-  "ccr-events.md", "ccr-check.md",
+  "ccr-events.md", "ccr-check.md", "ccr-repair.md",
 ];
 
 // ---------------------------------------------------------------------------

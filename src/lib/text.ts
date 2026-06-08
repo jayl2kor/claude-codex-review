@@ -44,6 +44,11 @@ export function opposite(role: string): string {
   return role === "claude" ? "codex" : "claude";
 }
 
+/** True for the two real agent roles (i.e. not "manual"/"unknown"). */
+export function isAgentRole(role: string): boolean {
+  return role === "claude" || role === "codex";
+}
+
 /**
  * Python `_join_sections` (ccr-hook.py:589-590):
  *   return "\n".join(f"{label}\n{body}\n" for label, body in sections)
