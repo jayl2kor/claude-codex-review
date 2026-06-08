@@ -4,10 +4,9 @@
  * preview + config, with deduped next-actions. Exit 0 only when overall == pass.
  */
 import { rootForCwd } from "../lib/paths";
-import type { CcrArgs } from "../lib/args";
 import { doctorDoc } from "./doctor";
 import { selftestDoc } from "./selftest";
-import { readyChecks } from "./ready";
+import { readyDoc } from "./ready";
 import { previewData } from "./preview";
 import { configDoc } from "./config";
 import { out, g } from "./shared";
@@ -16,17 +15,8 @@ function checkDoc(cwd: string): Record<string, unknown> {
   const root = rootForCwd(cwd);
   const doctor = doctorDoc(cwd);
   const selftest = selftestDoc();
-  const readyCheckList = readyChecks(cwd, root);
-  const ready = readyCheckList.every((c) => Boolean(c.ok));
-  const readyActions: string[] = [];
-  const readySeen = new Set<string>();
-  for (const check of readyCheckList) {
-    const action = String(check.action || "");
-    if (action && !readySeen.has(action)) {
-      readySeen.add(action);
-      readyActions.push(action);
-    }
-  }
+  const readyState = readyDoc(cwd, root);
+  const ready = Boolean(readyState.ready);
   const preview = previewData(cwd, root);
   const config = configDoc(cwd);
 
@@ -45,7 +35,7 @@ function checkDoc(cwd: string): Record<string, unknown> {
     addAction(String(action));
   }
   if (!ready) {
-    for (const action of readyActions) {
+    for (const action of (readyState.actions as string[]) || []) {
       addAction(action);
     }
   }
@@ -63,7 +53,7 @@ function checkDoc(cwd: string): Record<string, unknown> {
     overall: selftest.code === 0 && doctor.code === 0 && ready ? "pass" : "attention",
     selftest: { exit_code: selftest.code, passed: selftest.doc.passed, failed: selftest.doc.failed },
     doctor: { exit_code: doctor.code, summary: doctor.doc.summary },
-    ready: { ready, failed: readyCheckList.filter((c) => !c.ok).length },
+    ready: { ready, failed: ((readyState.checks as Array<{ ok: boolean }>) || []).filter((c) => !c.ok).length },
     preview: { eligible: preview.eligible, blockers: preview.blockers, changed_lines: preview.changed_lines },
     config: { env_overrides: envOverrides },
     actions,

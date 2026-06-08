@@ -48,13 +48,14 @@ export function previewData(cwd: string, root: string): PreviewData {
     state = defaultState();
   }
   const s = state as Record<string, unknown>;
-  const [diffText, diffHash, head, hasContent, changedLines, filesTouched] = collectDiff(cwd);
+  const inGit = insideGit(cwd);
+  const [diffText, diffHash, head, hasContent, changedLines, filesTouched] = collectDiff(cwd, inGit);
   const active = s.active_request;
   const skipPath = skipMarkerPath(root);
 
   const blockers: string[] = [];
   const notes: string[] = [];
-  if (!insideGit(cwd)) {
+  if (!inGit) {
     blockers.push("current directory is not inside a git worktree");
   }
   if (!hasContent) {

@@ -16,7 +16,7 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, accessSync, constants as fsConstants } from "node:fs";
+import { existsSync, readFileSync, accessSync, statSync, constants as fsConstants } from "node:fs";
 import { join, delimiter } from "node:path";
 
 import { readText } from "./io";
@@ -32,15 +32,42 @@ import { CCR_HANDOFF_SENTINEL } from "./constants";
  * execvp's against the current env) so a fake `cmux` can be substituted in
  * tests. Falls back to "cmux" so spawnSync still ENOENTs if it is truly absent.
  */
+// Cache keyed on the PATH string: the same process makes several cmux calls
+// (log/status/notify/send) and rescanning PATH each time is wasteful. On a hit
+// we re-validate the cached path (it may have been removed/replaced), but we do
+// NOT rescan while the PATH string is unchanged — so a freshly installed cmux
+// shadowing an earlier dir won't be picked up mid-process. That's acceptable
+// for this short-lived CLI; any PATH mutation (incl. test substitution that
+// changes PATH) invalidates the cache and triggers a full rescan.
+let cachedCmuxPathEnv: string | null = null;
+let cachedCmuxBin: string | null = null;
+
 function resolveCmuxBin(): string {
   const pathEnv = process.env.PATH ?? "";
+  if (cachedCmuxPathEnv === pathEnv && cachedCmuxBin !== null) {
+    try {
+      if (statSync(cachedCmuxBin).isDirectory()) {
+        throw new Error("cached cmux path is a directory");
+      }
+      accessSync(cachedCmuxBin, fsConstants.X_OK);
+      return cachedCmuxBin;
+    } catch {
+      cachedCmuxPathEnv = null;
+      cachedCmuxBin = null;
+    }
+  }
   for (const dir of pathEnv.split(delimiter)) {
     if (!dir) {
       continue;
     }
     const candidate = join(dir, "cmux");
     try {
+      if (statSync(candidate).isDirectory()) {
+        continue;
+      }
       accessSync(candidate, fsConstants.X_OK);
+      cachedCmuxPathEnv = pathEnv;
+      cachedCmuxBin = candidate;
       return candidate;
     } catch {
       /* not executable here */

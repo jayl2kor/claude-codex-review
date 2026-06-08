@@ -86,8 +86,10 @@ export function readyChecks(cwd: string, root: string): ReadyCheck[] {
   add(Boolean(claudeSurface), "Claude surface registered", claudeSurface || "not registered", "Run `cmux-setup-claude` in the Claude terminal surface.");
   add(Boolean(codexSurface), "Codex surface registered", codexSurface || "not registered", "Run `cmux-setup-codex` in the Codex terminal surface.");
 
-  add(workspaceEnabled(), "workspace enabled", workspaceEnabled() ? "enabled" : "not enabled for this cmux workspace", "Run `ccr-enable` from the target repository directory.");
-  add(insideGit(cwd), "git repository", insideGit(cwd) ? cwd : "current directory is not inside a git worktree", "Change directory to the target git repository before running CCR commands.");
+  const enabled = workspaceEnabled();
+  add(enabled, "workspace enabled", enabled ? "enabled" : "not enabled for this cmux workspace", "Run `ccr-enable` from the target repository directory.");
+  const inGit = insideGit(cwd);
+  add(inGit, "git repository", inGit ? cwd : "current directory is not inside a git worktree", "Change directory to the target git repository before running CCR commands.");
 
   const stateDoc = loadJson<Record<string, unknown>>(join(root, "state.json"), {});
   const active = isPlainObject(stateDoc) ? stateDoc.active_request : null;
@@ -100,9 +102,7 @@ export function readyChecks(cwd: string, root: string): ReadyCheck[] {
   return checks;
 }
 
-export function commandReady(jsonOutput: boolean): number {
-  const cwd = process.cwd();
-  const root = rootForCwd(cwd);
+export function readyDoc(cwd: string, root: string): Record<string, unknown> {
   const checks = readyChecks(cwd, root);
   const ready = checks.every((c) => Boolean(c.ok));
   const actions: string[] = [];
@@ -114,9 +114,19 @@ export function commandReady(jsonOutput: boolean): number {
       actions.push(action);
     }
   }
+  return { version: 1, ready, cwd, ccr_root: root, checks, actions };
+}
+
+export function commandReady(jsonOutput: boolean): number {
+  const cwd = process.cwd();
+  const root = rootForCwd(cwd);
+  const doc = readyDoc(cwd, root);
+  const ready = Boolean(doc.ready);
+  const checks = doc.checks as ReadyCheck[];
+  const actions = doc.actions as string[];
 
   if (jsonOutput) {
-    out(JSON.stringify({ version: 1, ready, cwd, ccr_root: root, checks, actions }, null, 2));
+    out(JSON.stringify(doc, null, 2));
     return ready ? 0 : 1;
   }
 

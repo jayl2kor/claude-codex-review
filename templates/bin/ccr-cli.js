@@ -330,7 +330,7 @@ function readStdinJson() {
 }
 
 // src/lib/hooks.ts
-import { existsSync as existsSync3, readFileSync as readFileSync8, appendFileSync as appendFileSync2, mkdirSync as mkdirSync5, statSync as statSync6 } from "fs";
+import { existsSync as existsSync3, readFileSync as readFileSync8, appendFileSync as appendFileSync2, mkdirSync as mkdirSync5, statSync as statSync7 } from "fs";
 import { isAbsolute as isAbsolute2, join as join7 } from "path";
 
 // src/lib/paths.ts
@@ -1061,17 +1061,36 @@ function ensureSession(root, agent, role, inputData) {
 
 // src/lib/cmux.ts
 import { spawnSync } from "child_process";
-import { existsSync as existsSync2, readFileSync as readFileSync3, accessSync, constants as fsConstants2 } from "fs";
+import { existsSync as existsSync2, readFileSync as readFileSync3, accessSync, statSync as statSync2, constants as fsConstants2 } from "fs";
 import { join as join3, delimiter } from "path";
+var cachedCmuxPathEnv = null;
+var cachedCmuxBin = null;
 function resolveCmuxBin() {
   const pathEnv = process.env.PATH ?? "";
+  if (cachedCmuxPathEnv === pathEnv && cachedCmuxBin !== null) {
+    try {
+      if (statSync2(cachedCmuxBin).isDirectory()) {
+        throw new Error("cached cmux path is a directory");
+      }
+      accessSync(cachedCmuxBin, fsConstants2.X_OK);
+      return cachedCmuxBin;
+    } catch {
+      cachedCmuxPathEnv = null;
+      cachedCmuxBin = null;
+    }
+  }
   for (const dir of pathEnv.split(delimiter)) {
     if (!dir) {
       continue;
     }
     const candidate = join3(dir, "cmux");
     try {
+      if (statSync2(candidate).isDirectory()) {
+        continue;
+      }
       accessSync(candidate, fsConstants2.X_OK);
+      cachedCmuxPathEnv = pathEnv;
+      cachedCmuxBin = candidate;
       return candidate;
     } catch {}
   }
@@ -1139,7 +1158,7 @@ function workspaceEnabled() {
 }
 
 // src/lib/review.ts
-import { readFileSync as readFileSync7, writeFileSync as writeFileSync3, statSync as statSync5, unlinkSync as unlinkSync3, mkdirSync as mkdirSync4, readdirSync as readdirSync3 } from "fs";
+import { readFileSync as readFileSync7, writeFileSync as writeFileSync3, statSync as statSync6, unlinkSync as unlinkSync3, mkdirSync as mkdirSync4, readdirSync as readdirSync3 } from "fs";
 import { join as join6 } from "path";
 
 // src/lib/decision.ts
@@ -1254,7 +1273,7 @@ function suppressReason(verdict, promptWants) {
 // src/lib/git.ts
 import { spawnSync as spawnSync2 } from "child_process";
 import { createHash } from "crypto";
-import { readFileSync as readFileSync4, statSync as statSync2, realpathSync as realpathSync2 } from "fs";
+import { readFileSync as readFileSync4, statSync as statSync3, realpathSync as realpathSync2 } from "fs";
 import { resolve, sep } from "path";
 
 // src/lib/diff.ts
@@ -1397,7 +1416,7 @@ function readUntrackedPatch(cwd) {
     }
     let raw;
     try {
-      const st = statSync2(path);
+      const st = statSync3(path);
       if (!st.isFile()) {
         continue;
       }
@@ -1435,8 +1454,8 @@ new file mode 100644
   }
   return chunks.join("");
 }
-function collectDiff(cwd) {
-  if (!insideGit(cwd)) {
+function collectDiff(cwd, isInsideGit = insideGit(cwd)) {
+  if (!isInsideGit) {
     return ["", "", "", false, 0, []];
   }
   const [, head] = git(cwd, ["rev-parse", "--short", "HEAD"]);
@@ -1488,7 +1507,7 @@ function computeDeltaPatch(prevDiff, currentDiff, dest) {
 }
 function isFile(path) {
   try {
-    return statSync2(path).isFile();
+    return statSync3(path).isFile();
   } catch {
     return false;
   }
@@ -1860,20 +1879,20 @@ import {
   writeFileSync,
   appendFileSync,
   mkdirSync as mkdirSync3,
-  statSync as statSync3,
+  statSync as statSync4,
   readdirSync
 } from "fs";
 import { join as join4, dirname as dirname2 } from "path";
 function isFile2(p) {
   try {
-    return statSync3(p).isFile();
+    return statSync4(p).isFile();
   } catch {
     return false;
   }
 }
 function isDir(p) {
   try {
-    return statSync3(p).isDirectory();
+    return statSync4(p).isDirectory();
   } catch {
     return false;
   }
@@ -2022,18 +2041,18 @@ ${text}`);
 }
 
 // src/lib/report.ts
-import { readFileSync as readFileSync6, writeFileSync as writeFileSync2, statSync as statSync4, readdirSync as readdirSync2 } from "fs";
+import { readFileSync as readFileSync6, writeFileSync as writeFileSync2, statSync as statSync5, readdirSync as readdirSync2 } from "fs";
 import { join as join5, basename } from "path";
 function isFile3(p) {
   try {
-    return statSync4(p).isFile();
+    return statSync5(p).isFile();
   } catch {
     return false;
   }
 }
 function isDir2(p) {
   try {
-    return statSync4(p).isDirectory();
+    return statSync5(p).isDirectory();
   } catch {
     return false;
   }
@@ -2057,7 +2076,7 @@ function latestSessionId(root) {
     }
     let mtime;
     try {
-      mtime = statSync4(d).mtimeMs;
+      mtime = statSync5(d).mtimeMs;
     } catch {
       continue;
     }
@@ -2375,14 +2394,14 @@ function isPlainObject4(v) {
 }
 function isFile4(p) {
   try {
-    return statSync5(p).isFile();
+    return statSync6(p).isFile();
   } catch {
     return false;
   }
 }
 function isDir3(p) {
   try {
-    return statSync5(p).isDirectory();
+    return statSync6(p).isDirectory();
   } catch {
     return false;
   }
@@ -2443,7 +2462,7 @@ function findLatestReviewedRound(root, excludeSessionId = "") {
     for (const r of roundNames) {
       const roundDir = join6(roundsDir, r);
       try {
-        const st = statSync5(join6(roundDir, "decision.json"));
+        const st = statSync6(join6(roundDir, "decision.json"));
         if (!st.isFile()) {
           continue;
         }
@@ -2945,7 +2964,7 @@ function ensureInfoExclude(cwd) {
 }
 function isFile5(p) {
   try {
-    return statSync6(p).isFile();
+    return statSync7(p).isFile();
   } catch {
     return false;
   }
@@ -3131,7 +3150,7 @@ function parseArgs(argv) {
 
 // src/commands/status.ts
 import { join as join8 } from "path";
-import { statSync as statSync7 } from "fs";
+import { statSync as statSync8 } from "fs";
 
 // src/commands/shared.ts
 function out(line = "") {
@@ -3179,7 +3198,7 @@ function captureStdout(fn) {
 // src/commands/status.ts
 function isFile6(p) {
   try {
-    return statSync7(p).isFile();
+    return statSync8(p).isFile();
   } catch {
     return false;
   }
@@ -3238,17 +3257,17 @@ function commandStatus() {
 
 // src/commands/history.ts
 import { join as join9 } from "path";
-import { readdirSync as readdirSync4, statSync as statSync8 } from "fs";
+import { readdirSync as readdirSync4, statSync as statSync9 } from "fs";
 function isDir4(p) {
   try {
-    return statSync8(p).isDirectory();
+    return statSync9(p).isDirectory();
   } catch {
     return false;
   }
 }
 function isFile7(p) {
   try {
-    return statSync8(p).isFile();
+    return statSync9(p).isFile();
   } catch {
     return false;
   }
@@ -3324,10 +3343,10 @@ function commandHistory(args) {
 
 // src/commands/events.ts
 import { join as join10 } from "path";
-import { readFileSync as readFileSync9, statSync as statSync9 } from "fs";
+import { readFileSync as readFileSync9, statSync as statSync10 } from "fs";
 function isFile8(p) {
   try {
-    return statSync9(p).isFile();
+    return statSync10(p).isFile();
   } catch {
     return false;
   }
@@ -3408,17 +3427,17 @@ function commandEvents(args) {
 
 // src/commands/show.ts
 import { join as join11, basename as basename2 } from "path";
-import { readFileSync as readFileSync10, readdirSync as readdirSync5, statSync as statSync10 } from "fs";
+import { readFileSync as readFileSync10, readdirSync as readdirSync5, statSync as statSync11 } from "fs";
 function isDir5(p) {
   try {
-    return statSync10(p).isDirectory();
+    return statSync11(p).isDirectory();
   } catch {
     return false;
   }
 }
 function isFile9(p) {
   try {
-    return statSync10(p).isFile();
+    return statSync11(p).isFile();
   } catch {
     return false;
   }
@@ -3538,10 +3557,10 @@ function commandReport(args) {
 
 // src/commands/preview.ts
 import { join as join13 } from "path";
-import { statSync as statSync11 } from "fs";
+import { statSync as statSync12 } from "fs";
 function isFile10(p) {
   try {
-    return statSync11(p).isFile();
+    return statSync12(p).isFile();
   } catch {
     return false;
   }
@@ -3552,12 +3571,13 @@ function previewData(cwd, root) {
     state = defaultState();
   }
   const s = state;
-  const [diffText, diffHash, head, hasContent, changedLines, filesTouched] = collectDiff(cwd);
+  const inGit = insideGit(cwd);
+  const [diffText, diffHash, head, hasContent, changedLines, filesTouched] = collectDiff(cwd, inGit);
   const active = s.active_request;
   const skipPath = skipMarkerPath(root);
   const blockers = [];
   const notes = [];
-  if (!insideGit(cwd)) {
+  if (!inGit) {
     blockers.push("current directory is not inside a git worktree");
   }
   if (!hasContent) {
@@ -3807,7 +3827,7 @@ function commandReset() {
 }
 
 // src/commands/cancel.ts
-import { existsSync as existsSync7, readdirSync as readdirSync6, statSync as statSync12, unlinkSync as unlinkSync4 } from "fs";
+import { existsSync as existsSync7, readdirSync as readdirSync6, statSync as statSync13, unlinkSync as unlinkSync4 } from "fs";
 import { join as join14 } from "path";
 function commandCancel() {
   const cwd = process.cwd();
@@ -3828,7 +3848,7 @@ function commandCancel() {
   const sessionsDir = join14(root, "sessions");
   let isDir6 = false;
   try {
-    isDir6 = statSync12(sessionsDir).isDirectory();
+    isDir6 = statSync13(sessionsDir).isDirectory();
   } catch {
     isDir6 = false;
   }
@@ -3882,10 +3902,10 @@ function commandSkipNext() {
 }
 
 // src/commands/prune.ts
-import { existsSync as existsSync8, readdirSync as readdirSync7, statSync as statSync13, rmSync as rmSync3, unlinkSync as unlinkSync5 } from "fs";
+import { existsSync as existsSync8, readdirSync as readdirSync7, statSync as statSync14, rmSync as rmSync3, unlinkSync as unlinkSync5 } from "fs";
 import { join as join15 } from "path";
 function mtimeSec(p) {
-  return statSync13(p).mtimeMs / 1000;
+  return statSync14(p).mtimeMs / 1000;
 }
 function round2(x) {
   return Math.round((x + Number.EPSILON) * 100) / 100;
@@ -3909,7 +3929,7 @@ function pruneCandidates(root, keep, days) {
   const candidates = [];
   const sessionDirs = byMtimeDesc(join15(root, "sessions"), (_n, full) => {
     try {
-      return statSync13(full).isDirectory();
+      return statSync14(full).isDirectory();
     } catch {
       return false;
     }
@@ -3929,7 +3949,7 @@ function pruneCandidates(root, keep, days) {
   });
   const supportFiles = byMtimeDesc(join15(root, "support"), (name, full) => {
     try {
-      return statSync13(full).isFile() && name.startsWith("ccr-support-");
+      return statSync14(full).isFile() && name.startsWith("ccr-support-");
     } catch {
       return false;
     }
@@ -4178,7 +4198,7 @@ import { join as join18, delimiter as delimiter3 } from "path";
 import { existsSync as existsSync9 } from "fs";
 
 // src/commands/diag.ts
-import { accessSync as accessSync2, constants as fsConstants3, readFileSync as readFileSync14, statSync as statSync14 } from "fs";
+import { accessSync as accessSync2, constants as fsConstants3, readFileSync as readFileSync14, statSync as statSync15 } from "fs";
 import { join as join17, delimiter as delimiter2 } from "path";
 import { homedir as homedir2 } from "os";
 function which(name) {
@@ -4186,7 +4206,7 @@ function which(name) {
   for (const dir of pathEnv.split(delimiter2)) {
     const candidate = join17(dir, name);
     try {
-      if (statSync14(candidate).isDirectory()) {
+      if (statSync15(candidate).isDirectory()) {
         continue;
       }
       accessSync2(candidate, fsConstants3.X_OK);
@@ -4197,7 +4217,7 @@ function which(name) {
 }
 function isExecutable(path) {
   try {
-    if (!statSync14(path).isFile()) {
+    if (!statSync15(path).isFile()) {
       return false;
     }
     accessSync2(path, fsConstants3.X_OK);
@@ -4258,8 +4278,10 @@ function doctorRows(cwd) {
   const codexSurface = surfaceForRole("codex");
   add(claudeSurface ? "ok" : "warn", "registered Claude surface", claudeSurface || "not registered");
   add(codexSurface ? "ok" : "warn", "registered Codex surface", codexSurface || "not registered");
-  add(workspaceEnabled() ? "ok" : "warn", "workspace enabled", workspaceEnabled() ? "enabled" : "run ccr-enable inside the target repo");
-  add(insideGit(cwd) ? "ok" : "warn", "git repository", insideGit(cwd) ? cwd : "current directory is not inside a git worktree");
+  const enabled = workspaceEnabled();
+  add(enabled ? "ok" : "warn", "workspace enabled", enabled ? "enabled" : "run ccr-enable inside the target repo");
+  const inGit = insideGit(cwd);
+  add(inGit ? "ok" : "warn", "git repository", inGit ? cwd : "current directory is not inside a git worktree");
   const statusDoc = loadJson(join18(root, "status.json"), {});
   const stateDoc = loadJson(join18(root, "state.json"), {});
   if (existsSync9(root)) {
@@ -4284,7 +4306,8 @@ function doctorRows(cwd) {
     add("ok", "active request", "none");
   }
   const skip = skipMarkerPath(root);
-  add(existsSync9(skip) ? "warn" : "ok", "skip-next marker", existsSync9(skip) ? skip : "none");
+  const skipPending = existsSync9(skip);
+  add(skipPending ? "warn" : "ok", "skip-next marker", skipPending ? skip : "none");
   return rows;
 }
 function doctorDoc(cwd) {
@@ -4306,24 +4329,17 @@ function doctorDoc(cwd) {
 }
 function commandDoctor(jsonOutput) {
   const cwd = process.cwd();
-  const root = rootForCwd(cwd);
-  const rows = doctorRows(cwd);
-  const failCount = rows.filter((r) => r.status === "fail").length;
-  const warnCount = rows.filter((r) => r.status === "warn").length;
-  const okCount = rows.filter((r) => r.status === "ok").length;
-  const nextMessage = doctorNextMessage(failCount, warnCount);
-  const actions = doctorActionItems(rows);
+  const { code, doc } = doctorDoc(cwd);
+  const root = String(doc.ccr_root);
+  const summary = doc.summary;
+  const failCount = summary.fail;
+  const warnCount = summary.warn;
+  const rows = doc.checks;
+  const nextMessage = String(doc.next);
+  const actions = doc.actions;
   if (jsonOutput) {
-    out(JSON.stringify({
-      version: 1,
-      cwd,
-      ccr_root: root,
-      summary: { fail: failCount, warn: warnCount, ok: okCount },
-      checks: rows,
-      next: nextMessage,
-      actions
-    }, null, 2));
-    return failCount ? 1 : 0;
+    out(JSON.stringify(doc, null, 2));
+    return code;
   }
   out("CCR Doctor");
   out(`Cwd: ${cwd}`);
@@ -4340,7 +4356,7 @@ function commandDoctor(jsonOutput) {
   actions.forEach((action, i) => {
     out(`${i + 1}. ${action}`);
   });
-  return failCount ? 1 : 0;
+  return code;
 }
 
 // src/commands/selftest.ts
@@ -4377,16 +4393,16 @@ function readyChecks(cwd, root) {
   const codexSurface = surfaceForRole("codex");
   add(Boolean(claudeSurface), "Claude surface registered", claudeSurface || "not registered", "Run `cmux-setup-claude` in the Claude terminal surface.");
   add(Boolean(codexSurface), "Codex surface registered", codexSurface || "not registered", "Run `cmux-setup-codex` in the Codex terminal surface.");
-  add(workspaceEnabled(), "workspace enabled", workspaceEnabled() ? "enabled" : "not enabled for this cmux workspace", "Run `ccr-enable` from the target repository directory.");
-  add(insideGit(cwd), "git repository", insideGit(cwd) ? cwd : "current directory is not inside a git worktree", "Change directory to the target git repository before running CCR commands.");
+  const enabled = workspaceEnabled();
+  add(enabled, "workspace enabled", enabled ? "enabled" : "not enabled for this cmux workspace", "Run `ccr-enable` from the target repository directory.");
+  const inGit = insideGit(cwd);
+  add(inGit, "git repository", inGit ? cwd : "current directory is not inside a git worktree", "Change directory to the target git repository before running CCR commands.");
   const stateDoc = loadJson(join19(root, "state.json"), {});
   const active = isPlainObject6(stateDoc) ? stateDoc.active_request : null;
   add(!isPlainObject6(active), "no active review request", !isPlainObject6(active) ? "none" : `round ${g(active, "round", "?")} ${g(active, "worker", "?")}->${g(active, "reviewer", "?")}`, "Wait for the reviewer to finish, or run `ccr-cancel` if the request is stale.");
   return checks;
 }
-function commandReady(jsonOutput) {
-  const cwd = process.cwd();
-  const root = rootForCwd(cwd);
+function readyDoc(cwd, root) {
   const checks = readyChecks(cwd, root);
   const ready = checks.every((c) => Boolean(c.ok));
   const actions = [];
@@ -4398,8 +4414,17 @@ function commandReady(jsonOutput) {
       actions.push(action);
     }
   }
+  return { version: 1, ready, cwd, ccr_root: root, checks, actions };
+}
+function commandReady(jsonOutput) {
+  const cwd = process.cwd();
+  const root = rootForCwd(cwd);
+  const doc = readyDoc(cwd, root);
+  const ready = Boolean(doc.ready);
+  const checks = doc.checks;
+  const actions = doc.actions;
   if (jsonOutput) {
-    out(JSON.stringify({ version: 1, ready, cwd, ccr_root: root, checks, actions }, null, 2));
+    out(JSON.stringify(doc, null, 2));
     return ready ? 0 : 1;
   }
   out("CCR Ready Check");
@@ -4425,7 +4450,7 @@ function commandReady(jsonOutput) {
 }
 
 // src/commands/support.ts
-import { mkdirSync as mkdirSync10, readdirSync as readdirSync8, readFileSync as readFileSync15, statSync as statSync15, writeFileSync as writeFileSync7 } from "fs";
+import { mkdirSync as mkdirSync10, readdirSync as readdirSync8, readFileSync as readFileSync15, statSync as statSync16, writeFileSync as writeFileSync7 } from "fs";
 import { join as join20 } from "path";
 var CRC_TABLE = (() => {
   const t = new Uint32Array(256);
@@ -4498,7 +4523,7 @@ function buildZipStored(entries) {
 }
 function isFile11(p) {
   try {
-    return statSync15(p).isFile();
+    return statSync16(p).isFile();
   } catch {
     return false;
   }
@@ -4556,7 +4581,7 @@ function commandSupport(args) {
     try {
       roundNames = readdirSync8(roundsDir).filter((n) => {
         try {
-          return statSync15(join20(roundsDir, n)).isDirectory();
+          return statSync16(join20(roundsDir, n)).isDirectory();
         } catch {
           return false;
         }
@@ -5004,17 +5029,8 @@ function checkDoc(cwd) {
   const root = rootForCwd(cwd);
   const doctor = doctorDoc(cwd);
   const selftest = selftestDoc();
-  const readyCheckList = readyChecks(cwd, root);
-  const ready = readyCheckList.every((c) => Boolean(c.ok));
-  const readyActions = [];
-  const readySeen = new Set;
-  for (const check of readyCheckList) {
-    const action = String(check.action || "");
-    if (action && !readySeen.has(action)) {
-      readySeen.add(action);
-      readyActions.push(action);
-    }
-  }
+  const readyState = readyDoc(cwd, root);
+  const ready = Boolean(readyState.ready);
   const preview = previewData(cwd, root);
   const config = configDoc(cwd);
   const actions = [];
@@ -5032,7 +5048,7 @@ function checkDoc(cwd) {
     addAction(String(action));
   }
   if (!ready) {
-    for (const action of readyActions) {
+    for (const action of readyState.actions || []) {
       addAction(action);
     }
   }
@@ -5048,7 +5064,7 @@ function checkDoc(cwd) {
     overall: selftest.code === 0 && doctor.code === 0 && ready ? "pass" : "attention",
     selftest: { exit_code: selftest.code, passed: selftest.doc.passed, failed: selftest.doc.failed },
     doctor: { exit_code: doctor.code, summary: doctor.doc.summary },
-    ready: { ready, failed: readyCheckList.filter((c) => !c.ok).length },
+    ready: { ready, failed: (readyState.checks || []).filter((c) => !c.ok).length },
     preview: { eligible: preview.eligible, blockers: preview.blockers, changed_lines: preview.changed_lines },
     config: { env_overrides: envOverrides },
     actions

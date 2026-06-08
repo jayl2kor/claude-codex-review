@@ -84,9 +84,11 @@ export function doctorRows(cwd: string): DoctorRow[] {
   add(claudeSurface ? "ok" : "warn", "registered Claude surface", claudeSurface || "not registered");
   add(codexSurface ? "ok" : "warn", "registered Codex surface", codexSurface || "not registered");
 
-  add(workspaceEnabled() ? "ok" : "warn", "workspace enabled", workspaceEnabled() ? "enabled" : "run ccr-enable inside the target repo");
+  const enabled = workspaceEnabled();
+  add(enabled ? "ok" : "warn", "workspace enabled", enabled ? "enabled" : "run ccr-enable inside the target repo");
 
-  add(insideGit(cwd) ? "ok" : "warn", "git repository", insideGit(cwd) ? cwd : "current directory is not inside a git worktree");
+  const inGit = insideGit(cwd);
+  add(inGit ? "ok" : "warn", "git repository", inGit ? cwd : "current directory is not inside a git worktree");
 
   const statusDoc = loadJson<Record<string, unknown>>(join(root, "status.json"), {});
   const stateDoc = loadJson<Record<string, unknown>>(join(root, "state.json"), {});
@@ -114,7 +116,8 @@ export function doctorRows(cwd: string): DoctorRow[] {
   }
 
   const skip = skipMarkerPath(root);
-  add(existsSync(skip) ? "warn" : "ok", "skip-next marker", existsSync(skip) ? skip : "none");
+  const skipPending = existsSync(skip);
+  add(skipPending ? "warn" : "ok", "skip-next marker", skipPending ? skip : "none");
 
   return rows;
 }
@@ -140,25 +143,18 @@ export function doctorDoc(cwd: string): { code: number; doc: Record<string, unkn
 
 export function commandDoctor(jsonOutput: boolean): number {
   const cwd = process.cwd();
-  const root = rootForCwd(cwd);
-  const rows = doctorRows(cwd);
-  const failCount = rows.filter((r) => r.status === "fail").length;
-  const warnCount = rows.filter((r) => r.status === "warn").length;
-  const okCount = rows.filter((r) => r.status === "ok").length;
-  const nextMessage = doctorNextMessage(failCount, warnCount);
-  const actions = doctorActionItems(rows);
+  const { code, doc } = doctorDoc(cwd);
+  const root = String(doc.ccr_root);
+  const summary = doc.summary as { fail: number; warn: number; ok: number };
+  const failCount = summary.fail;
+  const warnCount = summary.warn;
+  const rows = doc.checks as DoctorRow[];
+  const nextMessage = String(doc.next);
+  const actions = doc.actions as string[];
 
   if (jsonOutput) {
-    out(JSON.stringify({
-      version: 1,
-      cwd,
-      ccr_root: root,
-      summary: { fail: failCount, warn: warnCount, ok: okCount },
-      checks: rows,
-      next: nextMessage,
-      actions,
-    }, null, 2));
-    return failCount ? 1 : 0;
+    out(JSON.stringify(doc, null, 2));
+    return code;
   }
 
   out("CCR Doctor");
@@ -176,5 +172,5 @@ export function commandDoctor(jsonOutput: boolean): number {
   actions.forEach((action, i) => {
     out(`${i + 1}. ${action}`);
   });
-  return failCount ? 1 : 0;
+  return code;
 }

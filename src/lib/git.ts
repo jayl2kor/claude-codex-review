@@ -148,8 +148,9 @@ export function readUntrackedPatch(cwd: string): string {
  */
 export function collectDiff(
   cwd: string,
+  isInsideGit: boolean = insideGit(cwd),
 ): [string, string, string, boolean, number, string[]] {
-  if (!insideGit(cwd)) {
+  if (!isInsideGit) {
     return ["", "", "", false, 0, []];
   }
   const [, head] = git(cwd, ["rev-parse", "--short", "HEAD"]);
