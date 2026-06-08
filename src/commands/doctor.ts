@@ -9,7 +9,7 @@ import { existsSync } from "node:fs";
 
 import { loadJson } from "../lib/io";
 import { rootForCwd, skipMarkerPath, workspaceId, surfaceId } from "../lib/paths";
-import { workspaceEnabled, surfaceForRole, roleForCurrentSurface, liveSurfaceIds, isSurfaceLive } from "../lib/cmux";
+import { workspaceEnabled, surfaceForRole, roleForCurrentSurface, liveSurfaceIds, isSurfaceLive, currentSurfaceId } from "../lib/cmux";
 import { insideGit } from "../lib/git";
 import { formatDuration } from "../lib/text";
 import { doctorNextMessage, doctorActionItems } from "../lib/misc";
@@ -74,6 +74,18 @@ export function doctorRows(cwd: string): DoctorRow[] {
   const wid = workspaceId();
   const sid = surfaceId();
   add(wid && sid ? "ok" : "warn", "cmux surface", wid && sid ? `workspace=${wid} surface=${sid}` : "not running inside a cmux surface");
+
+  // A stale CMUX_SURFACE_ID env var (inherited unchanged by a split/resumed
+  // shell) is the classic "cmux-setup-* registered but the surface isn't
+  // recognized" cause: setup/role-detection then use the wrong id. Compare the
+  // env var against cmux's authoritative caller surface.
+  if (sid) {
+    const authoritative = currentSurfaceId();
+    const matches = authoritative === sid;
+    add(matches ? "ok" : "warn", "surface id source",
+      matches ? "CMUX_SURFACE_ID matches cmux identify"
+        : `CMUX_SURFACE_ID (${sid}) != cmux caller surface (${authoritative}) — env is stale; re-run cmux-setup-* (now uses the cmux value)`);
+  }
 
   const role = roleForCurrentSurface();
   const roleKnown = role === "claude" || role === "codex";

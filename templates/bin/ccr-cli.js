@@ -485,20 +485,20 @@ function promptGatePath(root, sessionId) {
 
 // src/lib/lock.ts
 import {
-  mkdirSync as mkdirSync2,
+  mkdirSync as mkdirSync3,
   rmdirSync,
   rmSync,
-  statSync,
-  readFileSync as readFileSync2,
+  statSync as statSync2,
+  readFileSync as readFileSync3,
   unlinkSync as unlinkSync2,
   renameSync as renameSync2,
   linkSync,
-  existsSync,
+  existsSync as existsSync2,
   realpathSync,
   openSync as openSync2,
   closeSync as closeSync2
 } from "fs";
-import { join as join2 } from "path";
+import { join as join3 } from "path";
 import { randomBytes as randomBytes2 } from "crypto";
 
 // src/lib/misc.ts
@@ -583,6 +583,11 @@ function doctorActionItems(rows) {
   }
   return actions;
 }
+
+// src/lib/cmux.ts
+import { spawnSync } from "child_process";
+import { existsSync, readFileSync as readFileSync2, accessSync, statSync, mkdirSync as mkdirSync2, constants as fsConstants2 } from "fs";
+import { join as join2, delimiter } from "path";
 
 // src/lib/constants.ts
 function pyInt(value, context) {
@@ -743,6 +748,219 @@ var MUST_FIX_SENTINELS = new Set([
   "\uC5C6\uC74C"
 ]);
 
+// src/lib/cmux.ts
+var cachedCmuxPathEnv = null;
+var cachedCmuxBin = null;
+function resolveCmuxBin() {
+  const pathEnv = process.env.PATH ?? "";
+  if (cachedCmuxPathEnv === pathEnv && cachedCmuxBin !== null) {
+    try {
+      if (statSync(cachedCmuxBin).isDirectory()) {
+        throw new Error("cached cmux path is a directory");
+      }
+      accessSync(cachedCmuxBin, fsConstants2.X_OK);
+      return cachedCmuxBin;
+    } catch {
+      cachedCmuxPathEnv = null;
+      cachedCmuxBin = null;
+    }
+  }
+  for (const dir of pathEnv.split(delimiter)) {
+    if (!dir) {
+      continue;
+    }
+    const candidate = join2(dir, "cmux");
+    try {
+      if (statSync(candidate).isDirectory()) {
+        continue;
+      }
+      accessSync(candidate, fsConstants2.X_OK);
+      cachedCmuxPathEnv = pathEnv;
+      cachedCmuxBin = candidate;
+      return candidate;
+    } catch {}
+  }
+  return "cmux";
+}
+function cmux(...args) {
+  spawnSync(resolveCmuxBin(), args, { stdio: ["ignore", "ignore", "ignore"] });
+}
+function cmuxLog(level, message) {
+  cmux("log", "--source", "ccr", "--level", level, "--", message);
+}
+function cmuxStatus(value, color = "#0A84FF") {
+  cmux("set-status", "ccr", value, "--icon", "git-pull-request", "--color", color, "--priority", "80");
+}
+function cmuxNotify(title, body, surface = "") {
+  const args = ["notify", "--title", title, "--body", body];
+  if (surface) {
+    args.push("--surface", surface);
+  }
+  cmux(...args);
+}
+function sendToSurface(surface, message) {
+  if (!surface) {
+    return false;
+  }
+  const wrapped = `${CCR_HANDOFF_SENTINEL}
+${message}`;
+  const bin = resolveCmuxBin();
+  const send = spawnSync(bin, ["send", "--surface", surface, wrapped], {
+    stdio: ["ignore", "ignore", "ignore"]
+  });
+  if (send.error || send.status !== 0) {
+    return false;
+  }
+  const enter = spawnSync(bin, ["send-key", "--surface", surface, "enter"], {
+    stdio: ["ignore", "ignore", "ignore"]
+  });
+  if (enter.error || enter.status !== 0) {
+    return false;
+  }
+  return true;
+}
+function parseIdentifyCaller(stdout) {
+  try {
+    const data = JSON.parse(stdout);
+    const caller = data?.caller;
+    const surface = typeof caller?.surface_id === "string" ? caller.surface_id : "";
+    const workspace = typeof caller?.workspace_id === "string" ? caller.workspace_id : "";
+    return surface ? { surface, workspace } : null;
+  } catch {
+    return null;
+  }
+}
+var cachedIdentify;
+function cmuxIdentifyCaller() {
+  if (cachedIdentify !== undefined) {
+    return cachedIdentify;
+  }
+  const res = spawnSync(resolveCmuxBin(), ["identify", "--id-format", "uuids"], {
+    stdio: ["ignore", "pipe", "ignore"],
+    encoding: "utf-8"
+  });
+  cachedIdentify = res.error || res.status !== 0 || typeof res.stdout !== "string" ? null : parseIdentifyCaller(res.stdout);
+  return cachedIdentify;
+}
+function currentSurfaceId() {
+  return cmuxIdentifyCaller()?.surface || surfaceId();
+}
+function roleForCurrentSurface() {
+  const current = currentSurfaceId();
+  if (!current) {
+    return "unknown";
+  }
+  if (readText(join2(workspaceConfigDir(), "claude-surface")) === current) {
+    return "claude";
+  }
+  if (readText(join2(workspaceConfigDir(), "codex-surface")) === current) {
+    return "codex";
+  }
+  return "unknown";
+}
+function surfaceFile(role) {
+  return join2(workspaceConfigDir(), `${role}-surface`);
+}
+function surfaceForRole(role) {
+  return readText(surfaceFile(role));
+}
+function registerSurface(role, surface) {
+  mkdirSync2(workspaceConfigDir(), { recursive: true });
+  writeFileAtomic(surfaceFile(role), surface + `
+`);
+}
+function liveSurfaceIds() {
+  const wid = workspaceId();
+  if (!wid) {
+    return null;
+  }
+  const res = spawnSync(resolveCmuxBin(), ["list-pane-surfaces", "--workspace", wid, "--id-format", "both"], {
+    stdio: ["ignore", "pipe", "ignore"],
+    encoding: "utf-8"
+  });
+  if (res.error || res.status !== 0 || typeof res.stdout !== "string") {
+    return null;
+  }
+  const ids = new Set;
+  const re = /[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}/g;
+  for (const m of res.stdout.matchAll(re)) {
+    ids.add(m[0].toUpperCase());
+  }
+  return ids.size > 0 ? ids : null;
+}
+function isSurfaceLive(id, live) {
+  if (!id) {
+    return false;
+  }
+  if (live === null) {
+    return null;
+  }
+  return live.has(id.toUpperCase());
+}
+function decidePairing(current, registered, regAlive) {
+  if (!current || registered === current) {
+    return "noop";
+  }
+  if (!registered) {
+    return "register-unset";
+  }
+  if (regAlive === false) {
+    return "repair-dead";
+  }
+  if (regAlive === true) {
+    return "refuse-live";
+  }
+  return "unknown-liveness";
+}
+function healPairing(agent) {
+  const current = currentSurfaceId();
+  const registered = surfaceForRole(agent);
+  let regAlive = null;
+  if (current && registered && registered !== current) {
+    regAlive = isSurfaceLive(registered, liveSurfaceIds());
+  }
+  const action = decidePairing(current, registered, regAlive);
+  const tryRegister = () => {
+    try {
+      registerSurface(agent, current);
+      return true;
+    } catch (e) {
+      cmuxLog("warning", `CCR: could not persist ${agent} surface registration (${String(e?.message ?? e)}); run cmux-setup-${agent} from a normal terminal surface`);
+      return false;
+    }
+  };
+  switch (action) {
+    case "register-unset":
+      if (!tryRegister()) {
+        return { action, healed: false };
+      }
+      cmuxLog("info", `CCR: registered ${agent} surface ${current} (was unset)`);
+      return { action, healed: true };
+    case "repair-dead":
+      if (!tryRegister()) {
+        return { action, healed: false };
+      }
+      cmuxLog("info", `CCR: re-paired ${agent} surface (previous ${registered} is gone -> ${current})`);
+      cmuxStatus("CCR re-paired", "#34C759");
+      return { action, healed: true };
+    case "refuse-live":
+      cmuxLog("warning", `CCR: ${agent} is already paired to a live surface ${registered}; this session (${current}) will NOT take over (run \`ccr-repair --force\` to override)`);
+      return { action, healed: false };
+    case "unknown-liveness":
+      cmuxLog("warning", `CCR: could not verify whether ${agent} surface ${registered} is live; leaving the registration unchanged`);
+      return { action, healed: false };
+    default:
+      return { action, healed: false };
+  }
+}
+function workspaceEnabled() {
+  const wid = workspaceId();
+  if (!wid || !existsSync(ENABLED_FILE)) {
+    return false;
+  }
+  return splitlines(readFileSync2(ENABLED_FILE, "utf-8")).includes(wid);
+}
+
 // src/lib/tool.ts
 function isPlainObject(x) {
   return typeof x === "object" && x !== null && !Array.isArray(x);
@@ -818,7 +1036,7 @@ var LOCK_INIT_GRACE_MS = 1000;
 var RECLAIM_STALE_MS = 5000;
 function readOwner(ownerPath) {
   try {
-    const t = readFileSync2(ownerPath, "utf-8").trim();
+    const t = readFileSync3(ownerPath, "utf-8").trim();
     return t === "" ? null : t;
   } catch (err) {
     if (isErrno(err, "ENOENT")) {
@@ -830,13 +1048,13 @@ function readOwner(ownerPath) {
 function reclaimDeadLock(lockDir) {
   const reclaimDir = `${lockDir}.reclaim`;
   try {
-    mkdirSync2(reclaimDir);
+    mkdirSync3(reclaimDir);
   } catch (err) {
     if (!isErrno(err, "EEXIST")) {
       throw err;
     }
     try {
-      const st = statSync(reclaimDir);
+      const st = statSync2(reclaimDir);
       if (Date.now() - st.mtimeMs > RECLAIM_STALE_MS) {
         rmSync(reclaimDir, { recursive: true, force: true });
       }
@@ -849,7 +1067,7 @@ function reclaimDeadLock(lockDir) {
     return;
   }
   try {
-    const owner = readOwner(join2(lockDir, "owner"));
+    const owner = readOwner(join3(lockDir, "owner"));
     const pid = owner === null ? null : holderPid(owner);
     if (pid !== null && pid !== process.pid && isProcessAlive(pid)) {
       return;
@@ -872,13 +1090,13 @@ function acquireLock(lockDir) {
   if (HELD_TOKENS.has(lockDir)) {
     throw new Error(`lockedState is not reentrant: this process already holds ${lockDir}`);
   }
-  const ownerPath = join2(lockDir, "owner");
+  const ownerPath = join3(lockDir, "owner");
   const myToken = mintToken();
   let emptySince = 0;
   for (;; ) {
     let created = false;
     try {
-      mkdirSync2(lockDir);
+      mkdirSync3(lockDir);
       created = true;
     } catch (err) {
       if (!isErrno(err, "EEXIST")) {
@@ -886,7 +1104,7 @@ function acquireLock(lockDir) {
       }
     }
     if (created) {
-      const ownerTmp = join2(lockDir, `.owner.tmp.${randomBytes2(8).toString("hex")}`);
+      const ownerTmp = join3(lockDir, `.owner.tmp.${randomBytes2(8).toString("hex")}`);
       try {
         const fd = openSync2(ownerTmp, "wx", 384);
         try {
@@ -931,8 +1149,8 @@ function releaseLock(lockDir, token) {
   if (HELD_TOKENS.get(lockDir) === token) {
     HELD_TOKENS.delete(lockDir);
   }
-  if (readOwner(join2(lockDir, "owner")) === token) {
-    ignoreENOENT(() => unlinkSync2(join2(lockDir, "owner")));
+  if (readOwner(join3(lockDir, "owner")) === token) {
+    ignoreENOENT(() => unlinkSync2(join3(lockDir, "owner")));
     ignoreENOENT(() => rmdirSync(lockDir));
   }
 }
@@ -940,10 +1158,10 @@ function isPlainObject2(v) {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 function lockedState(root, mutate) {
-  mkdirSync2(root, { recursive: true });
+  mkdirSync3(root, { recursive: true });
   const canonicalRoot = realpathSync(root);
-  const lockDir = join2(canonicalRoot, "state.lock.d");
-  const statePath = join2(canonicalRoot, "state.json");
+  const lockDir = join3(canonicalRoot, "state.lock.d");
+  const statePath = join3(canonicalRoot, "state.json");
   const token = acquireLock(lockDir);
   try {
     let state = loadJson(statePath, defaultState());
@@ -964,7 +1182,7 @@ function getDefault(obj, key, dflt) {
   return Object.prototype.hasOwnProperty.call(obj, key) ? obj[key] : dflt;
 }
 function writeStatus(root, state, status, reason = "") {
-  const existing = loadJson(join2(root, "status.json"), {});
+  const existing = loadJson(join3(root, "status.json"), {});
   const data = {
     status,
     reason,
@@ -976,7 +1194,7 @@ function writeStatus(root, state, status, reason = "") {
   if (isPlainObject2(existing) && isPlainObject2(existing.last_report)) {
     data.last_report = existing.last_report;
   }
-  writeJson(join2(root, "status.json"), data);
+  writeJson(join3(root, "status.json"), data);
 }
 function markDirty(root, inputData, agent, role) {
   const sid = String(getOrNull(inputData, "session_id") || "");
@@ -991,12 +1209,12 @@ function markDirty(root, inputData, agent, role) {
     tool_name: toolName(inputData),
     turn_id: getOrNull(inputData, "turn_id")
   };
-  writeJson(join2(sessionDir(root, sid), "dirty.json"), dirty);
-  appendJsonl(join2(root, "events.jsonl"), { type: "dirty", ...dirty });
+  writeJson(join3(sessionDir(root, sid), "dirty.json"), dirty);
+  appendJsonl(join3(root, "events.jsonl"), { type: "dirty", ...dirty });
 }
 function clearDirty(root, sessionId) {
   try {
-    unlinkSync2(join2(sessionDir(root, sessionId), "dirty.json"));
+    unlinkSync2(join3(sessionDir(root, sessionId), "dirty.json"));
   } catch (err) {
     if (!isErrno(err, "ENOENT")) {
       throw err;
@@ -1004,7 +1222,7 @@ function clearDirty(root, sessionId) {
   }
 }
 function hasDirty(root, sessionId) {
-  return existsSync(join2(sessionDir(root, sessionId), "dirty.json"));
+  return existsSync2(join3(sessionDir(root, sessionId), "dirty.json"));
 }
 function writePromptGate(root, sessionId, wantsReview, promptHead = "") {
   if (!sessionId) {
@@ -1037,7 +1255,7 @@ function ensureSession(root, agent, role, inputData) {
     return;
   }
   const sdir = sessionDir(root, sid);
-  const existing = loadJson(join2(sdir, "session.json"), {});
+  const existing = loadJson(join3(sdir, "session.json"), {});
   const createdAt = (isPlainObject2(existing) ? existing.created_at : undefined) || now();
   const data = {
     ...isPlainObject2(existing) ? existing : {},
@@ -1047,14 +1265,14 @@ function ensureSession(root, agent, role, inputData) {
     session_id: sid,
     cwd,
     workspace_id: workspaceId(),
-    surface_id: surfaceId(),
+    surface_id: currentSurfaceId(),
     transcript_path: getOrNull(inputData, "transcript_path"),
     model: getOrNull(inputData, "model"),
     created_at: createdAt,
     updated_at: now()
   };
-  writeJson(join2(sdir, "session.json"), data);
-  appendJsonl(join2(root, "events.jsonl"), {
+  writeJson(join3(sdir, "session.json"), data);
+  appendJsonl(join3(root, "events.jsonl"), {
     at: now(),
     type: "hook",
     agent,
@@ -1062,183 +1280,6 @@ function ensureSession(root, agent, role, inputData) {
     session_id: sid,
     event: getOrNull(inputData, "hook_event_name")
   });
-}
-
-// src/lib/cmux.ts
-import { spawnSync } from "child_process";
-import { existsSync as existsSync2, readFileSync as readFileSync3, accessSync, statSync as statSync2, mkdirSync as mkdirSync3, constants as fsConstants2 } from "fs";
-import { join as join3, delimiter } from "path";
-var cachedCmuxPathEnv = null;
-var cachedCmuxBin = null;
-function resolveCmuxBin() {
-  const pathEnv = process.env.PATH ?? "";
-  if (cachedCmuxPathEnv === pathEnv && cachedCmuxBin !== null) {
-    try {
-      if (statSync2(cachedCmuxBin).isDirectory()) {
-        throw new Error("cached cmux path is a directory");
-      }
-      accessSync(cachedCmuxBin, fsConstants2.X_OK);
-      return cachedCmuxBin;
-    } catch {
-      cachedCmuxPathEnv = null;
-      cachedCmuxBin = null;
-    }
-  }
-  for (const dir of pathEnv.split(delimiter)) {
-    if (!dir) {
-      continue;
-    }
-    const candidate = join3(dir, "cmux");
-    try {
-      if (statSync2(candidate).isDirectory()) {
-        continue;
-      }
-      accessSync(candidate, fsConstants2.X_OK);
-      cachedCmuxPathEnv = pathEnv;
-      cachedCmuxBin = candidate;
-      return candidate;
-    } catch {}
-  }
-  return "cmux";
-}
-function cmux(...args) {
-  spawnSync(resolveCmuxBin(), args, { stdio: ["ignore", "ignore", "ignore"] });
-}
-function cmuxLog(level, message) {
-  cmux("log", "--source", "ccr", "--level", level, "--", message);
-}
-function cmuxStatus(value, color = "#0A84FF") {
-  cmux("set-status", "ccr", value, "--icon", "git-pull-request", "--color", color, "--priority", "80");
-}
-function cmuxNotify(title, body, surface = "") {
-  const args = ["notify", "--title", title, "--body", body];
-  if (surface) {
-    args.push("--surface", surface);
-  }
-  cmux(...args);
-}
-function sendToSurface(surface, message) {
-  if (!surface) {
-    return false;
-  }
-  const wrapped = `${CCR_HANDOFF_SENTINEL}
-${message}`;
-  const bin = resolveCmuxBin();
-  const send = spawnSync(bin, ["send", "--surface", surface, wrapped], {
-    stdio: ["ignore", "ignore", "ignore"]
-  });
-  if (send.error || send.status !== 0) {
-    return false;
-  }
-  const enter = spawnSync(bin, ["send-key", "--surface", surface, "enter"], {
-    stdio: ["ignore", "ignore", "ignore"]
-  });
-  if (enter.error || enter.status !== 0) {
-    return false;
-  }
-  return true;
-}
-function roleForCurrentSurface() {
-  const current = surfaceId();
-  if (!current) {
-    return "unknown";
-  }
-  if (readText(join3(workspaceConfigDir(), "claude-surface")) === current) {
-    return "claude";
-  }
-  if (readText(join3(workspaceConfigDir(), "codex-surface")) === current) {
-    return "codex";
-  }
-  return "unknown";
-}
-function surfaceFile(role) {
-  return join3(workspaceConfigDir(), `${role}-surface`);
-}
-function surfaceForRole(role) {
-  return readText(surfaceFile(role));
-}
-function registerSurface(role, surface) {
-  mkdirSync3(workspaceConfigDir(), { recursive: true });
-  writeFileAtomic(surfaceFile(role), surface + `
-`);
-}
-function liveSurfaceIds() {
-  const wid = workspaceId();
-  if (!wid) {
-    return null;
-  }
-  const res = spawnSync(resolveCmuxBin(), ["list-pane-surfaces", "--workspace", wid, "--id-format", "both"], {
-    stdio: ["ignore", "pipe", "ignore"],
-    encoding: "utf-8"
-  });
-  if (res.error || res.status !== 0 || typeof res.stdout !== "string") {
-    return null;
-  }
-  const ids = new Set;
-  const re = /[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}/g;
-  for (const m of res.stdout.matchAll(re)) {
-    ids.add(m[0].toUpperCase());
-  }
-  return ids.size > 0 ? ids : null;
-}
-function isSurfaceLive(id, live) {
-  if (!id) {
-    return false;
-  }
-  if (live === null) {
-    return null;
-  }
-  return live.has(id.toUpperCase());
-}
-function decidePairing(current, registered, regAlive) {
-  if (!current || registered === current) {
-    return "noop";
-  }
-  if (!registered) {
-    return "register-unset";
-  }
-  if (regAlive === false) {
-    return "repair-dead";
-  }
-  if (regAlive === true) {
-    return "refuse-live";
-  }
-  return "unknown-liveness";
-}
-function healPairing(agent) {
-  const current = surfaceId();
-  const registered = surfaceForRole(agent);
-  let regAlive = null;
-  if (current && registered && registered !== current) {
-    regAlive = isSurfaceLive(registered, liveSurfaceIds());
-  }
-  const action = decidePairing(current, registered, regAlive);
-  switch (action) {
-    case "register-unset":
-      registerSurface(agent, current);
-      cmuxLog("info", `CCR: registered ${agent} surface ${current} (was unset)`);
-      return { action, healed: true };
-    case "repair-dead":
-      registerSurface(agent, current);
-      cmuxLog("info", `CCR: re-paired ${agent} surface (previous ${registered} is gone -> ${current})`);
-      cmuxStatus("CCR re-paired", "#34C759");
-      return { action, healed: true };
-    case "refuse-live":
-      cmuxLog("warning", `CCR: ${agent} is already paired to a live surface ${registered}; this session (${current}) will NOT take over (run \`ccr-repair --force\` to override)`);
-      return { action, healed: false };
-    case "unknown-liveness":
-      cmuxLog("warning", `CCR: could not verify whether ${agent} surface ${registered} is live; leaving the registration unchanged`);
-      return { action, healed: false };
-    default:
-      return { action, healed: false };
-  }
-}
-function workspaceEnabled() {
-  const wid = workspaceId();
-  if (!wid || !existsSync2(ENABLED_FILE)) {
-    return false;
-  }
-  return splitlines(readFileSync3(ENABLED_FILE, "utf-8")).includes(wid);
 }
 
 // src/lib/review.ts
@@ -4157,7 +4198,7 @@ function commandRequest(args) {
     }
   }
   const worker = isAgentRole(role) ? role : "manual";
-  const workerSurface = isAgentRole(worker) ? surfaceForRole(worker) : surfaceId();
+  const workerSurface = isAgentRole(worker) ? surfaceForRole(worker) : currentSurfaceId();
   const reviewerSurface = surfaceForRole(reviewer);
   if (!reviewerSurface) {
     err(`No registered ${reviewer} surface. Run cmux-setup-${reviewer} in that terminal.`);
@@ -4362,6 +4403,11 @@ function doctorRows(cwd) {
   const wid = workspaceId();
   const sid = surfaceId();
   add(wid && sid ? "ok" : "warn", "cmux surface", wid && sid ? `workspace=${wid} surface=${sid}` : "not running inside a cmux surface");
+  if (sid) {
+    const authoritative = currentSurfaceId();
+    const matches = authoritative === sid;
+    add(matches ? "ok" : "warn", "surface id source", matches ? "CMUX_SURFACE_ID matches cmux identify" : `CMUX_SURFACE_ID (${sid}) != cmux caller surface (${authoritative}) \u2014 env is stale; re-run cmux-setup-* (now uses the cmux value)`);
+  }
   const role = roleForCurrentSurface();
   const roleKnown = role === "claude" || role === "codex";
   add(roleKnown ? "ok" : "warn", "registered current surface", roleKnown ? role : "run cmux-setup-claude or cmux-setup-codex in this surface");
@@ -5333,9 +5379,9 @@ function commandRepair(args) {
     err("Not inside a cmux workspace (CMUX_WORKSPACE_ID unset).");
     return 1;
   }
-  const current = surfaceId();
+  const current = currentSurfaceId();
   if (!current) {
-    err("No CMUX_SURFACE_ID \u2014 run ccr-repair from inside the cmux surface you want to pair.");
+    err("Could not determine the current surface (cmux identify failed and CMUX_SURFACE_ID is unset) \u2014 run ccr-repair from inside the cmux surface you want to pair.");
     return 1;
   }
   const live = liveSurfaceIds();

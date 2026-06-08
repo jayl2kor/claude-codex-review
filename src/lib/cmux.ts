@@ -130,9 +130,60 @@ export function sendToSurface(surface: string, message: string): boolean {
   return true;
 }
 
+/**
+ * Parse `caller.surface_id` / `caller.workspace_id` out of `cmux identify
+ * --id-format uuids` JSON. Pure (unit-tested). The `caller` block is the surface
+ * that actually invoked cmux — authoritative even when the CMUX_SURFACE_ID env
+ * var is stale (e.g. inherited unchanged by a split pane or a resumed surface).
+ */
+export function parseIdentifyCaller(stdout: string): { surface: string; workspace: string } | null {
+  try {
+    const data = JSON.parse(stdout) as Record<string, unknown>;
+    const caller = data?.caller as Record<string, unknown> | undefined;
+    const surface = typeof caller?.surface_id === "string" ? caller.surface_id : "";
+    const workspace = typeof caller?.workspace_id === "string" ? caller.workspace_id : "";
+    return surface ? { surface, workspace } : null;
+  } catch {
+    return null;
+  }
+}
+
+// cmux identify is stable for a process's lifetime; cache it. `undefined` = not
+// yet attempted, `null` = attempted and unavailable (cmux missing / not a surface).
+let cachedIdentify: { surface: string; workspace: string } | null | undefined;
+
+function cmuxIdentifyCaller(): { surface: string; workspace: string } | null {
+  if (cachedIdentify !== undefined) {
+    return cachedIdentify;
+  }
+  const res = spawnSync(resolveCmuxBin(), ["identify", "--id-format", "uuids"], {
+    stdio: ["ignore", "pipe", "ignore"],
+    encoding: "utf-8",
+  });
+  cachedIdentify = res.error || res.status !== 0 || typeof res.stdout !== "string"
+    ? null
+    : parseIdentifyCaller(res.stdout);
+  return cachedIdentify;
+}
+
+/**
+ * Authoritative current surface id: cmux's `caller` view, which is robust to a
+ * stale CMUX_SURFACE_ID env var (the root cause of "cmux-setup-* registered but
+ * the surface isn't recognized"). Falls back to the env var when cmux can't be
+ * reached (e.g. a sandboxed model command, or outside cmux).
+ */
+export function currentSurfaceId(): string {
+  return cmuxIdentifyCaller()?.surface || surfaceId();
+}
+
+/** Test seam: reset the cached `cmux identify` result. */
+export function resetIdentifyCache(): void {
+  cachedIdentify = undefined;
+}
+
 /** Python `role_for_current_surface` (177-185). */
 export function roleForCurrentSurface(): string {
-  const current = surfaceId();
+  const current = currentSurfaceId();
   if (!current) {
     return "unknown";
   }
@@ -249,20 +300,35 @@ export interface HealResult {
  * session) so two same-role tabs don't fight.
  */
 export function healPairing(agent: string): HealResult {
-  const current = surfaceId();
+  const current = currentSurfaceId();
   const registered = surfaceForRole(agent);
   let regAlive: boolean | null = null;
   if (current && registered && registered !== current) {
     regAlive = isSurfaceLive(registered, liveSurfaceIds());
   }
   const action = decidePairing(current, registered, regAlive);
+  // Registration writes to ~/.config; a write can fail (e.g. a sandboxed
+  // context where that path is read-only). Never let that break the hook.
+  const tryRegister = (): boolean => {
+    try {
+      registerSurface(agent, current);
+      return true;
+    } catch (e) {
+      cmuxLog("warning", `CCR: could not persist ${agent} surface registration (${String((e as Error)?.message ?? e)}); run cmux-setup-${agent} from a normal terminal surface`);
+      return false;
+    }
+  };
   switch (action) {
     case "register-unset":
-      registerSurface(agent, current);
+      if (!tryRegister()) {
+        return { action, healed: false };
+      }
       cmuxLog("info", `CCR: registered ${agent} surface ${current} (was unset)`);
       return { action, healed: true };
     case "repair-dead":
-      registerSurface(agent, current);
+      if (!tryRegister()) {
+        return { action, healed: false };
+      }
       cmuxLog("info", `CCR: re-paired ${agent} surface (previous ${registered} is gone -> ${current})`);
       cmuxStatus("CCR re-paired", "#34C759");
       return { action, healed: true };

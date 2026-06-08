@@ -10,8 +10,8 @@
  * surface or overriding a duplicate.
  */
 import type { CcrArgs } from "../lib/args";
-import { workspaceId, surfaceId } from "../lib/paths";
-import { roleForCurrentSurface, surfaceForRole, registerSurface, liveSurfaceIds, isSurfaceLive } from "../lib/cmux";
+import { workspaceId } from "../lib/paths";
+import { roleForCurrentSurface, surfaceForRole, registerSurface, liveSurfaceIds, isSurfaceLive, currentSurfaceId } from "../lib/cmux";
 import { isAgentRole, opposite } from "../lib/text";
 import { out, err } from "./shared";
 
@@ -22,9 +22,9 @@ export function commandRepair(args: CcrArgs): number {
     err("Not inside a cmux workspace (CMUX_WORKSPACE_ID unset).");
     return 1;
   }
-  const current = surfaceId();
+  const current = currentSurfaceId();
   if (!current) {
-    err("No CMUX_SURFACE_ID — run ccr-repair from inside the cmux surface you want to pair.");
+    err("Could not determine the current surface (cmux identify failed and CMUX_SURFACE_ID is unset) — run ccr-repair from inside the cmux surface you want to pair.");
     return 1;
   }
 

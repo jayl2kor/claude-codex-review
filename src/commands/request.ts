@@ -11,9 +11,9 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { writeJson, now } from "../lib/io";
-import { rootForCwd, sessionDir, workspaceId, surfaceId } from "../lib/paths";
+import { rootForCwd, sessionDir, workspaceId } from "../lib/paths";
 import {
-  workspaceEnabled, surfaceForRole, roleForCurrentSurface, sendToSurface, cmuxStatus, cmuxLog,
+  workspaceEnabled, surfaceForRole, roleForCurrentSurface, currentSurfaceId, sendToSurface, cmuxStatus, cmuxLog,
 } from "../lib/cmux";
 import { lockedState, writeStatus } from "../lib/lock";
 import { opposite, sanitize, isAgentRole } from "../lib/text";
@@ -52,7 +52,7 @@ export function commandRequest(args: CcrArgs): number {
     }
   }
   const worker = isAgentRole(role) ? role : "manual";
-  const workerSurface = isAgentRole(worker) ? surfaceForRole(worker) : surfaceId();
+  const workerSurface = isAgentRole(worker) ? surfaceForRole(worker) : currentSurfaceId();
   const reviewerSurface = surfaceForRole(reviewer);
   if (!reviewerSurface) {
     err(`No registered ${reviewer} surface. Run cmux-setup-${reviewer} in that terminal.`);

@@ -57,7 +57,8 @@ import { randomBytes } from "node:crypto";
 
 import { loadJson, writeJson, appendJsonl, now, getOrNull, writeAllSync } from "./io";
 import { defaultState } from "./misc";
-import { sessionDir, workspaceId, surfaceId, promptGatePath } from "./paths";
+import { sessionDir, workspaceId, promptGatePath } from "./paths";
+import { currentSurfaceId } from "./cmux";
 import { toolName } from "./tool";
 
 // Per-process counter contributing to unique lock-token nonces.
@@ -498,7 +499,7 @@ export function ensureSession(
     session_id: sid,
     cwd,
     workspace_id: workspaceId(),
-    surface_id: surfaceId(),
+    surface_id: currentSurfaceId(),
     transcript_path: getOrNull(inputData, "transcript_path"),
     model: getOrNull(inputData, "model"),
     created_at: createdAt,

@@ -5,7 +5,7 @@
  * end-to-end elsewhere; this pins the decision matrix.
  */
 import { test, expect, describe } from "bun:test";
-import { decidePairing, type PairingAction } from "../src/lib/cmux";
+import { decidePairing, parseIdentifyCaller, type PairingAction } from "../src/lib/cmux";
 
 const CUR = "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA";
 const OTHER = "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB";
@@ -27,5 +27,31 @@ describe("decidePairing", () => {
 
   test("current==registered wins even when liveness says dead (no redundant rewrite)", () => {
     expect(decidePairing(CUR, CUR, false)).toBe("noop");
+  });
+});
+
+describe("parseIdentifyCaller", () => {
+  // Mirrors real `cmux identify --id-format uuids`: caller block precedes focused.
+  const real = JSON.stringify({
+    caller: { surface_id: CUR, workspace_id: "WS-CALLER", surface_type: "terminal" },
+    focused: { surface_id: OTHER, workspace_id: "WS-FOCUSED" },
+    socket_path: "/tmp/cmux.sock",
+  });
+
+  test("extracts the caller surface/workspace, not focused", () => {
+    expect(parseIdentifyCaller(real)).toEqual({ surface: CUR, workspace: "WS-CALLER" });
+  });
+
+  test("malformed JSON -> null", () => {
+    expect(parseIdentifyCaller("not json")).toBeNull();
+    expect(parseIdentifyCaller("")).toBeNull();
+  });
+
+  test("missing caller block -> null", () => {
+    expect(parseIdentifyCaller(JSON.stringify({ focused: { surface_id: OTHER } }))).toBeNull();
+  });
+
+  test("caller without surface_id -> null (can't trust it)", () => {
+    expect(parseIdentifyCaller(JSON.stringify({ caller: { workspace_id: "WS" } }))).toBeNull();
   });
 });

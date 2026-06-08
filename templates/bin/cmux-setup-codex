@@ -7,10 +7,27 @@ if ! inside_cmux; then
   exit 1
 fi
 
-mkdir -p "$(workspace_config_dir)"
-printf '%s\n' "$CMUX_SURFACE_ID" > "$(codex_surface_file)"
+SURFACE_ID="$(resolve_surface_id)"
+if [ -z "$SURFACE_ID" ]; then
+  echo "현재 surface id를 확인할 수 없습니다 (cmux identify 실패, CMUX_SURFACE_ID 비어있음)." >&2
+  exit 1
+fi
+if [ "$SURFACE_ID" != "${CMUX_SURFACE_ID:-}" ]; then
+  echo "참고: CMUX_SURFACE_ID(env=${CMUX_SURFACE_ID:-<unset>})가 실제 surface($SURFACE_ID)와 달라 cmux 기준 값으로 등록합니다."
+fi
 
-echo "현재 surface를 Codex 탭으로 등록했습니다."
+mkdir -p "$(workspace_config_dir)"
+printf '%s\n' "$SURFACE_ID" > "$(codex_surface_file)"
+
+# Verify the registration actually landed (write can fail under a sandboxed
+# context where ~/.config is read-only — e.g. run from inside codex, not a shell).
+if [ "$(cat "$(codex_surface_file)" 2>/dev/null)" != "$SURFACE_ID" ]; then
+  echo "등록 실패: $(codex_surface_file) 에 기록하지 못했습니다." >&2
+  echo "샌드박스 밖의 일반 터미널 surface에서 다시 실행하세요." >&2
+  exit 1
+fi
+
+echo "현재 surface를 Codex 탭으로 등록했습니다. (surface=$SURFACE_ID, workspace=$CMUX_WORKSPACE_ID)"
 
 CCR_CONFIG_ROOT="$HOME/.config/claude-codex-review"
 if [ "${CCR_DUAL_MODE:-1}" = "0" ]; then

@@ -9,6 +9,20 @@ inside_cmux() {
   [ -n "${CMUX_WORKSPACE_ID:-}" ] && [ -n "${CMUX_SURFACE_ID:-}" ]
 }
 
+# Authoritative current surface id. The CMUX_SURFACE_ID env var can be stale
+# (a split/inherited or resumed shell carries the parent's value), which makes a
+# registration written from $CMUX_SURFACE_ID point at the wrong surface. `cmux
+# identify` reports the caller surface the socket actually sees; its first
+# surface_id is the caller block. Falls back to the env var when cmux is absent.
+resolve_surface_id() {
+  local id=""
+  id=$(cmux identify --id-format uuids 2>/dev/null \
+    | grep -m1 '"surface_id"' \
+    | grep -oiE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' \
+    | head -1)
+  printf '%s\n' "${id:-${CMUX_SURFACE_ID:-}}"
+}
+
 workspace_enabled() {
   inside_cmux || return 1
   [ -f "$ENABLED_FILE" ] || return 1
