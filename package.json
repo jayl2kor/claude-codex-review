@@ -1,6 +1,6 @@
 {
   "name": "claude-codex-review",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "type": "module",
   "description": "Claude-Codex Review (CCR) loop for cmux: a hook-based two-agent review workflow.",
